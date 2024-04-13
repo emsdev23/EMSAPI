@@ -4,11 +4,7 @@ import mysql.connector
 from fastapi.responses import JSONResponse
 import pytz
 from datetime import datetime
-from pymongo import MongoClient 
-
-client = MongoClient("43.205.196.66", 27017)
-
-emsmongodb = client['ems']
+import json
 
 app = FastAPI()
 
@@ -25,24 +21,297 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def get_bmsdb():
-    db = mysql.connector.connect(
-        host="121.242.232.151",
-        user="emsrouser",
-        password="emsrouser@151",
-        port=3306
-    )
-    return db
+file_path = "/home/tenet/ems/py_script/db_creds.json"
+
+with open(file_path, 'r') as file:
+    data = json.load(file)
 
 def get_emsdb():
     db = mysql.connector.connect(
-        host="43.205.196.66",
-        user="emsroot",
-        password="22@teneT",
+        host=data['awsDB']['host'],
+        user=data['awsDB']['user'],
+        password=data['awsDB']['password'],
         database='EMS',
-        port=3307
+        port=data['awsDB']['port']
     )
     return db
+
+def get_bmsdb():
+    db=mysql.connector.connect(
+        host=data['bmsDB']['host'],
+        user=data['bmsDB']['user'],
+        password=data['bmsDB']['password'],
+        port=data['bmsDB']['port']
+    )
+    return db
+
+
+def custom_round(number):
+    last_two_digits = number % 100
+    if last_two_digits < 50:
+        return (number // 100) * 100
+    else:
+        return ((number // 100) + 1) * 100
+
+
+
+@app.post('/PeakDemand/Analysis/Count/Peak/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
+    peaklis = []
+
+    try:
+        value = data.get('date')
+        peak = data.get('peak')
+
+        if value and peak and isinstance(value, str):
+            with db.cursor() as bms_cur:
+                awsdb = get_emsdb()
+                awscur = awsdb.cursor()
+
+                awscur.execute("SELECT maxAvgPeak FROM EMS.peakShavingLogic where date(polledTime) = curdate() order by polledTime desc limit 1;")
+
+                peakMax = awscur.fetchall()
+
+                maxAvg = peakMax[0][0]
+
+                maxAvg = round(maxAvg)
+
+                GdmaxAvg = maxAvg - ((maxAvg*5)/100)
+
+                peak = round(peak)
+
+                bms_cur.execute(f"SELECT count(totalApparentPower2) FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}' and totalApparentPower2 >= {peak};")
+
+                maxres = bms_cur.fetchall()
+
+                maxCount = maxres[0][0]
+
+                bms_cur.execute(f"SELECT count(totalApparentPower2) FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}' and totalApparentPower2 < {peak};")
+
+                minres = bms_cur.fetchall()
+
+                minCount = minres[0][0]
+
+                totalCount = minCount+maxCount
+
+                maxPr = (maxCount/totalCount)*100
+                minPr = (minCount/totalCount)*100
+
+                peaklis.append({'limit':peak,'maxCount':maxCount,'minCount':minCount,'maxpr':maxPr,'minpr':minPr,
+                                'thresholdlimit':maxAvg,'graduallimit':GdmaxAvg})
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return peaklis
+
+
+@app.get('/PeakDemand/Analysis/Count')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
+
+    peaklis=[]
+    try:
+        processed_db = get_bmsdb()
+        awsdb = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+
+    awscur = awsdb.cursor()
+    bms_cur = processed_db.cursor()
+
+    awscur.execute("SELECT maxAvgPeak FROM EMS.peakShavingLogic where date(polledTime) = curdate() order by polledTime desc limit 1;")
+
+    peakMax = awscur.fetchall()
+
+    maxAvg = peakMax[0][0]
+
+    maxAvg = round(maxAvg)
+
+    GdmaxAvg = maxAvg - ((maxAvg*5)/100)
+
+    bms_cur.execute(f"SELECT count(totalApparentPower2) FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = curdate() and totalApparentPower2 >= {maxAvg};")
+
+    maxres = bms_cur.fetchall()
+
+    maxCount = maxres[0][0]
+
+    bms_cur.execute(f"SELECT count(totalApparentPower2) FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = curdate() and totalApparentPower2 < {maxAvg};")
+
+    minres = bms_cur.fetchall()
+
+    minCount = minres[0][0]
+
+    totalCount = minCount+maxCount
+
+    maxPr = (maxCount/totalCount)*100
+    minPr = (minCount/totalCount)*100
+
+    peaklis.append({'limit':GdmaxAvg,'maxCount':maxCount,'minCount':minCount,'maxpr':maxPr,'minpr':minPr,'thresholdlimit':maxAvg,
+                    'GradualLimit':GdmaxAvg})
+
+    return peaklis
+
+
+@app.post('/PeakDemand/Analysis/Count/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
+    peaklis = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bms_cur:
+                try:
+                    awsdb = get_emsdb()
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+                
+                awscur = awsdb.cursor()
+
+                awscur.execute(f"SELECT maxAvgPeak FROM EMS.peakShavingLogic where date(polledTime) = '{value}' order by polledTime desc limit 1;")
+
+                peakMax = awscur.fetchall()
+
+                maxAvg = peakMax[0][0]
+
+                maxAvg = round(maxAvg)
+
+                GdmaxAvg = maxAvg - ((maxAvg*5)/100)
+
+                bms_cur.execute(f"SELECT count(totalApparentPower2) FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}' and totalApparentPower2 >= {maxAvg};")
+
+                maxres = bms_cur.fetchall()
+
+                maxCount = maxres[0][0]
+
+                bms_cur.execute(f"SELECT count(totalApparentPower2) FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}' and totalApparentPower2 < {maxAvg};")
+
+                minres = bms_cur.fetchall()
+
+                minCount = minres[0][0]
+
+                totalCount = minCount+maxCount
+
+                maxPr = (maxCount/totalCount)*100
+                minPr = (minCount/totalCount)*100
+
+                peaklis.append({'limit':maxAvg,'maxCount':maxCount,'minCount':minCount,'maxpr':maxPr,'minpr':minPr,
+                                'thresholdlimit':maxAvg,'GradualLimit':GdmaxAvg})
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return peaklis
+
+
+@app.get('/PeakDemand/Maximum')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
+
+    MaximumDemand=[]
+    try:
+        processed_db = get_bmsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    bms_cur = processed_db.cursor()
+
+    bms_cur.execute("SELECT totalApparentPower2,polledTime FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) =curdate() and totalApparentPower2 = (select max(totalApparentPower2) from bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) =curdate())")
+   
+    res = bms_cur.fetchall()
+
+    # print(res)
+
+    for i in res:
+        polledTime = str(i[1])[11:19]
+        if(i[0]==None):
+            totalApparentPower2=0
+        else:
+            totalApparentPower2=round(i[0],2)
+        MaximumDemand.append({'totalApparentPower2':totalApparentPower2,"PolledTime":polledTime})
+    
+    return MaximumDemand
+
+@app.post('/PeakDemand/Maximum/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
+    MaximumDemand = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bms_cur:
+
+                bms_cur.execute(f"SELECT totalApparentPower2,polledTime FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}' and totalApparentPower2 = (select max(totalApparentPower2) from bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}')")
+   
+                res = bms_cur.fetchall()
+
+                # print(res)
+
+                for i in res:
+                    polledTime = str(i[1])[11:19]
+                    if(i[0]==None):
+                        totalApparentPower2=0
+                    else:
+                        totalApparentPower2=round(i[0],2)
+                    
+                    MaximumDemand.append({'totalApparentPower2':totalApparentPower2,"PolledTime":polledTime})
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return MaximumDemand
+
+@app.get('/thermal/dashbaordSummary')
+def peak_demand_min():
+    thermal_list = []
+    try:
+        processed_db = get_bmsdb()
+        awsdb = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+
+    bms_cur = processed_db.cursor()
+    awscur = awsdb.cursor()
+
+    bms_cur.execute("SELECT thermalStorageInlet/100,thermalStorageOutlet/100,tsStoredWaterTemperature/100,ADPValve,BDPValve,HValve  FROM bmsmgmtprodv13.thermalStorageMQTTReadings where date(polledTime) = curdate() and ADPValve>0 order by recordId desc limit 1;")
+
+    thermalres= bms_cur.fetchall()
+
+    if len(thermalres) > 0:
+        tsIn = thermalres[0][0]
+        tsOut = thermalres[0][1]
+        tsSt = thermalres[0][2]
+        ADPvalve = thermalres[0][3]
+        BDPvalve = thermalres[0][4]
+        Hvalve = thermalres[0][5]
+
+        if ADPvalve == 1 and BDPvalve ==1 and Hvalve == 1:
+            status = 'DCHG'
+        else:
+            status = 'IDLE'
+    else:
+        tsIn = None
+        tsOut = None
+        tsSt = None
+        status = None
+
+    awscur.execute("SELECT sum(coolingEnergy),sum(ChargingEnergy) FROM EMS.ThermalHourly where date(polledTime) = curdate();")
+
+    energyRes = awscur.fetchall()
+
+    if len(energyRes) > 0:
+        coolingEnergy = energyRes[0][0]
+        chargingEnergy = energyRes[0][1]
+    else:
+        coolingEnergy = None
+        chargingEnergy = None
+
+    thermal_list.append({'tsInletTemperature':tsIn,'tsOutletTemperature':tsOut,'tsStoredWaterTemperature':tsSt,
+                         'coolingEnergy':coolingEnergy,'chargingEnergy':chargingEnergy,'Status':status})
+    
+    return thermal_list
+    
 
 @app.get('/thermal/summaryCard')
 def peak_demand_min():
@@ -129,19 +398,35 @@ def peak_demand_min():
     peak_list = []
     try:
         processed_db = get_bmsdb()
+        awsdb = get_emsdb()
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
 
     bms_cur = processed_db.cursor()
+    awscur = awsdb.cursor()
 
-    bms_cur.execute("SELECT polledTime,totalApparentPower2 FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling WHERE DATE(polledTime) = '2022-01-10'")
+    awscur.execute("SELECT round(maxAvgPeak) FROM EMS.peakShavingLogic where date(polledTime) = curdate() order by polledTime desc limit 1;")
+
+    maxAvgres = awscur.fetchall()
+
+    if len(maxAvgres) > 0:
+        maxAvg = maxAvgres[0][0]
+    else:
+        maxAvg = 4000
+
+    safeLimit = maxAvg - ((maxAvg*1)/100)
+
+    bms_cur.execute("SELECT polledTime,totalApparentPower2 FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling WHERE DATE(polledTime) = curdate()")
 
     peaks = bms_cur.fetchall()
 
     for i in peaks:
         if i[1] is not None:
             polled_time = str(i[0])[11:16]
-            peak_list.append({'polledTime': polled_time, 'peakdemand': round(i[1], 2), 'limitline': 4000})
+            peak_list.append({'polledTime': polled_time, 'peakdemand': round(i[1], 2), 'limitline': maxAvg, 'safeLimit':safeLimit})
+        else:
+            polled_time = str(i[0])[11:16]
+            peak_list.append({'polledTime': polled_time, 'peakdemand': None, 'limitline': maxAvg, 'safeLimit':safeLimit})
 
     bms_cur.close()
     processed_db.close()
@@ -155,8 +440,26 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
     try:
         value = data.get('date')
 
+        try:
+            awsdb = get_emsdb()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+
         if value and isinstance(value, str):
             with db.cursor() as bms_cur:
+
+                awscur = awsdb.cursor()
+
+                awscur.execute(f"SELECT round(maxAvgPeak) FROM EMS.peakShavingLogic where date(polledTime) = '{value}' order by polledTime desc limit 1;")
+
+                maxAvgres = awscur.fetchall()
+
+                if len(maxAvgres) >0:
+                    maxAvg = maxAvgres[0][0]
+                else:
+                    maxAvg = 4000
+                
+                safeLimit = maxAvg - ((maxAvg*1)/100)
 
                 bms_cur.execute(f"SELECT polledTime,totalApparentPower2 FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling WHERE DATE(polledTime) = '{value}'")
 
@@ -165,7 +468,11 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
                 for i in peaks:
                     if i[1] is not None:
                         polled_time = str(i[0])[11:16]
-                        peak_list.append({'polledTime': polled_time, 'peakdemand': round(i[1], 2), 'limitline': 4000})
+                        peak_list.append({'polledTime': polled_time, 'peakdemand': round(i[1], 2), 'limitline': maxAvg, 'safeLimit':safeLimit})
+                    else:
+                        polled_time = str(i[0])[11:16]
+                        peak_list.append({'polledTime': polled_time, 'peakdemand': None, 'limitline': maxAvg, 'safeLimit':safeLimit})
+
 
                 bms_cur.close()
 

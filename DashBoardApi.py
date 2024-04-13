@@ -178,13 +178,15 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     print(res)
 
 
-    specificyield = res[0][0]/1075.8
-    performancePercentage = res[0][0]/(res[0][1]/4000)*1075.8
+    specificyield = res[0][0]/2008.36
+    performancePercentage = (res[0][0]/((res[0][1])*2008.36)) * 100
 
     if performancePercentage > 100:
         performancePercentage = 81
+    
+    print(performancePercentage)
 
-        WheeledInSolar_response.append({'meterenergy_diff_sum':round(res[0][0]),'wmsirradiation_sum':round(res[0][1],2),
+    WheeledInSolar_response.append({'meterenergy_diff_sum':round(res[0][0]),'wmsirradiation_sum':round(res[0][1],2),
                               'performance':performancePercentage,'specific_yield':round(specificyield,2)})
     bms_cur.close()
     processed_db.close()
@@ -208,7 +210,12 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     res = bms_cur.fetchall()
 
     specificyield = res[0][0]/1075.8
-    performancePercentage = res[0][0]/(res[0][1]/4000)*1075.8
+    roof = res[0][0]
+    irrad = (res[0][1])
+    performancePercentage = (roof/(irrad*1075.8))*100
+
+    print(roof,irrad)
+    print(performancePercentage)
 
     if performancePercentage > 100:
         performancePercentage = 81
