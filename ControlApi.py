@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import mysql.connector
 from fastapi.responses import JSONResponse
 import psycopg2
+import json
 
 app = FastAPI()
 
@@ -10,6 +11,12 @@ origins = [
     "*",
     # Add more origins as needed
 ]
+
+file_path = "/home/tenet/ems/py_script/db_creds.json"
+
+with open(file_path, 'r') as file:
+    data = json.load(file)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,40 +28,31 @@ app.add_middleware(
 
 def get_emsdb():
     db = mysql.connector.connect(
-        host="121.242.232.211",
-        user="emsroot",
-        password="22@teneT",
+        host=data['emsDB']['host'],
+        user=data['emsDB']['user'],
+        password=data['emsDB']['password'],
         database='EMS',
-        port=3306
-    )
-    return db
-
-def get_emsdb():
-    db = mysql.connector.connect(
-        host="121.242.232.211",
-        user="emsroot",
-        password="22@teneT",
-        database='EMS',
-        port=3306
+        port=data['emsDB']['port']
     )
     return db
 
 def get_awsdb():
     db = mysql.connector.connect(
-        host="43.205.196.66",
-        user="emsroot",
-        password="22@teneT",
+        host=data['awsDB']['host'],
+        user=data['awsDB']['user'],
+        password=data['awsDB']['password'],
         database='EMS',
-        port=3307
+        port=data['awsDB']['port']
     )
     return db
 
 def get_cpm_2():
     db = psycopg2.connect(
-            host="10.9.200.203",
-            database="cpm_phase_2",
-            user="rpuser",
-            password="parkPassword")
+            host=data["cmp2"]["host"],
+            database=data["cmp2"]["database"],
+            user=data["cmp2"]["user"],
+            password=data["cmp2"]["password"]
+            )
     
     return db
 
