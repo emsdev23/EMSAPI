@@ -64,6 +64,47 @@ def custom_round(number):
         return ((number // 100) + 1) * 100
 
 
+@app.get('/Analysis/MaxPeak')
+def maxPeakJump(db: mysql.connector.connect = Depends(get_meterdb)):
+    max_peak = []
+
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    awscur = aws_db.cursor()
+
+    awscur.execute("select peakJump,peakTime from EMS.PeakMaxJump where polledDate = curdate();")
+
+    res = awscur.fetchall()
+
+    for i in res:
+        max_peak.append({"maxJump":i[0],'peakTime':i[1]})
+    
+    return max_peak
+
+@app.post('/Analysis/MaxPeak/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    max_peak = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as awscur:
+                awscur.execute(f"select peakJump from EMS.PeakMaxJump where polledDate = '{value}';")
+
+                res = awscur.fetchall()
+
+                for i in res:
+                    max_peak.append({'maxJump':i[0]})
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+
+    return max_peak
+
 @app.get('/Analysis/InverterHourly')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     inverterlis = []
