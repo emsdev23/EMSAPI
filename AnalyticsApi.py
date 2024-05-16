@@ -64,6 +64,80 @@ def custom_round(number):
         return ((number // 100) + 1) * 100
 
 
+@app.get('/Analysis/TopCoolingClients')
+def topCoolingClients(db: mysql.connector.connect = Depends(get_meterdb)):
+    ClientLi = []
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    awscur = aws_db.cursor()
+    
+    awscur.execute("""SELECT tenantname,SUM(Energy) AS TotalEnergy FROM EMS.Clientscoolinghourlysum 
+                      where date(polledTime) = curdate() GROUP BY tenantname
+                      order by TotalEnergy desc limit 10;""")
+    
+    limitres = awscur.fetchall()
+
+    ClientList = {}
+
+    for i in limitres:
+        awscur.execute(f"""select polledTime,tenantname,Energy FROM EMS.Clientscoolinghourlysum  
+                           where date(polledTime) = curdate() and tenantname = '{i[0]}';""")
+        
+        res = awscur.fetchall()
+
+        for i in res:
+            if i[1] in ClientList.keys():
+                polledTime = str(i[0])[11:16]
+                ClientList[i[1]].append({'polledTime':polledTime,'Energy':i[2]})
+            else:
+                polledTime = str(i[0])[11:16]
+                ClientList[i[1]] = [{'polledTime':polledTime,'Energy':i[2]}]
+
+    ClientLi = [ClientList]
+
+    return ClientLi
+   
+@app.post('/Analysis/TopCoolingClients/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    ClientLi = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as awscur:
+                awscur.execute(f"""SELECT tenantname,SUM(Energy) AS TotalEnergy FROM EMS.Clientscoolinghourlysum 
+                      where date(polledTime) = '{value}' GROUP BY tenantname
+                      order by TotalEnergy desc limit 10;""")
+    
+                limitres = awscur.fetchall()
+
+                ClientList = {}
+
+                for i in limitres:
+                    awscur.execute(f"""select polledTime,tenantname,Energy FROM EMS.Clientscoolinghourlysum  
+                                    where date(polledTime) = '{value}' and tenantname = '{i[0]}';""")
+                    
+                    res = awscur.fetchall()
+
+                    for i in res:
+                        if i[1] in ClientList.keys():
+                            polledTime = str(i[0])[11:16]
+                            ClientList[i[1]].append({'polledTime':polledTime,'Energy':i[2]})
+                        else:
+                            polledTime = str(i[0])[11:16]
+                            ClientList[i[1]] = [{'polledTime':polledTime,'Energy':i[2]}]
+
+                ClientLi = [ClientList]
+                
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+
+    return ClientLi
+
 @app.get('/Analysis/MaxPeak')
 def maxPeakJump(db: mysql.connector.connect = Depends(get_meterdb)):
     max_peak = []
@@ -93,17 +167,65 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
 
         if value and isinstance(value, str):
             with db.cursor() as awscur:
-                awscur.execute(f"select peakJump from EMS.PeakMaxJump where polledDate = '{value}';")
+                awscur.execute(f"select peakJump,peakTime from EMS.PeakMaxJump where polledDate = '{value}';")
 
                 res = awscur.fetchall()
 
                 for i in res:
-                    max_peak.append({'maxJump':i[0]})
+                    max_peak.append({'maxJump':i[0],'peakTime':i[1]})
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
 
     return max_peak
+
+
+@app.get('/Analysis/InverterHourlyph2')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
+    inverterlis = []
+
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    awscur = aws_db.cursor()
+
+    awscur.execute("SELECT polledTime,inverter9,inverter10,inverter11,inverter12,inverter13,inverter14 FROM EMS.inverterHourlyph2 where date(polledTime) = curdate();")
+
+    inverres = awscur.fetchall()
+
+    for i in inverres:
+        polledTime = str(i[0])[11:16]
+        inverterlis.append({'polledTime':polledTime,'inverter9':i[1],'inverter10':i[2],'inverter11':i[3],
+                            'inverter12':i[4],'inverter13':i[5],'inverter14':i[6]})
+    
+    return inverterlis
+
+
+@app.post('/Analysis/InverterHourlyph2/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    inverterlis = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as awscur:
+                awscur.execute(f"SELECT polledTime,inverter9,inverter10,inverter11,inverter12,inverter13,inverter14 FROM EMS.inverterHourlyph2 where date(polledTime) = '{value}';")
+
+                inverres = awscur.fetchall()
+
+                for i in inverres:
+                    polledTime = str(i[0])[11:16]
+                    inverterlis.append({'polledTime':polledTime,'inverter9':i[1],'inverter10':i[2],'inverter11':i[3],
+                                        'inverter12':i[4],'inverter13':i[5],'inverter14':i[6]})
+    
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+
+    return inverterlis
+
 
 @app.get('/Analysis/InverterHourly')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
@@ -149,6 +271,52 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
         return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
 
     return inverterlis
+
+
+@app.get('/Analysis/Wheeledin2')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
+    wheellis = []
+
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    awscur = aws_db.cursor()
+
+    awscur.execute("SELECT polledTime,Energy,irradiation,expectedEnergy FROM EMS.WheeledHourlyph2 where date(polledTime) = curdate();")
+
+    wheelres = awscur.fetchall()
+
+    for i in wheelres:
+        polledTime = str(i[0])[11:16]
+        wheellis.append({'polledTime':polledTime,'Energy':i[1],'Irradiation':i[2],'expextedEnergy':i[3]})
+    
+    return wheellis
+
+
+@app.post('/Analysis/Wheeledin2/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    wheellis = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as awscur:
+                awscur.execute(f"SELECT polledTime,Energy,irradiation,expectedEnergy FROM EMS.WheeledHourlyph2 where date(polledTime) = '{value}';")
+
+                wheelres = awscur.fetchall()
+
+                for i in wheelres:
+                    polledTime = str(i[0])[11:16]
+                    wheellis.append({'polledTime':polledTime,'Energy':i[1],'Irradiation':i[2],'expextedEnergy':i[3]})
+        
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+
+    return wheellis
+
 
 @app.get('/Analysis/Wheeledin')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
