@@ -49,6 +49,31 @@ def get_RAWemsdb():
     return db
 
 
+@app.get('/Dashboard/REtillDay')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    clients = []
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"}) 
+    
+    emscur = processed_db.cursor()
+
+    emscur.execute("select sum(gridEnergy),sum(diesel),sum(wheeledinEnergy),sum(wheeledinEnergy2),sum(windenergy),sum(RooftopEnergy) from EMS.buildingConsumptionMonthWise")
+
+    res = emscur.fetchall()
+
+    for i in res:
+        Renewable = (i[2]+i[3]+i[4]+i[5])
+        Consumed = (i[0]+i[1]+i[2]+i[3]+i[4]+i[5])
+        RE = (round((Renewable/Consumed)*100,1))
+
+        clients.append({'RE':RE})  
+
+    emscur.close()
+
+    return clients
+
 @app.get('/Dashboard/topClients')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     clients = []
@@ -68,6 +93,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     
     for i in res:
         clients.append({i[1]:[i[2],i[3]]})
+    
+    emscur.close()
 
     return clients
 
@@ -87,6 +114,8 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
                 for i in res:
                     clients.append({i[1]:[i[2],i[3]]})
+                
+                emscur.close()
     
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
@@ -198,6 +227,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     energy.append(sorted_data)
 
+    emscur.close()
+
     return energy
 
 
@@ -305,6 +336,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
                 energy.append(sorted_data)
 
+                emscur.close()
     
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
@@ -440,7 +472,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':grid,
                        'diesel':diesel,'avgFactor':avgfac,'minFactor':minfac,'RE':RE})
-    
+    bms_cur.close()
+
     return Highlights
 
 @app.post('/Dashboard/Highlights/Filtered')
@@ -474,7 +507,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 else:
                     wheeled2 = 0
 
-                bms_cur.execute(f"SELECT round(total_energy_difference) FROM meterdata.diselenergy where date(polled_time) = '{value}' order by polled_time desc limit 1;")
+                bms_cur.execute(f"SELECT sum(Energy) FROM EMS.DGHourly where date(polledTime) = '{value}';")
 
                 diselres = bms_cur.fetchall()
 
@@ -494,6 +527,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
                 Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':grid,
                                 'diesel':diesel,'avgFactor':avgfac,'minFactor':minfac,'RE':RE})
+                bms_cur.close()
     
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
@@ -699,6 +733,9 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     for i in res:
         polledTime = str(i[0])[11:16]
         thermalStorage.append({'coolingEnergy':round(i[1],2),'polledTime':polledTime})
+    
+    bms_cur.close()
+    processed_db.close()
 
     return thermalStorage
 
@@ -745,7 +782,9 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
                 for i in res:
                     polledTime = str(i[0])[11:16]
-                    thermalStorage.append({'coolingEnergy':round(i[1],2),'polledTime':polledTime})    
+                    thermalStorage.append({'coolingEnergy':round(i[1],2),'polledTime':polledTime})  
+                
+                bmscur.close() 
     
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
@@ -800,7 +839,8 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                         lto_list.append({'chargingEnergy':i[0],'dischargingEnergy':i[1],'idleEnergy':0,'energy_available':i[2],'Pacsoc':i[3],'polledTime':polledTime})
                     else:
                         lto_list.append({'chargingEnergy':0,'dischargingEnergy':0,'idleEnergy':0.01,'energy_available':i[2],'Pacsoc':i[3],'polledTime':polledTime})
-
+                
+                bmscur.close()
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
@@ -855,7 +895,8 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                         lto_list.append({'chargingEnergy':i[0],'dischargingEnergy':i[1],'idleEnergy':0,'energy_available':i[2],'Pacsoc':i[3],'polledTime':polledTime})
                     else:
                         lto_list.append({'chargingEnergy':0,'dischargingEnergy':0,'idleEnergy':0.01,'energy_available':i[2],'Pacsoc':i[3],'polledTime':polledTime})
-
+                
+                bmscur.close()
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
@@ -1008,6 +1049,9 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     for i in res:
         polledTime = str(i[0])[11:16]
         thermalStorage.append({'coolingEnergy':round(i[1],2),'polledTime':polledTime})
+    
+    bms_cur.close()
+    processed_db.close()
 
     return thermalStorage
 
@@ -1027,7 +1071,8 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 for i in res:
                     polledTime = str(i[0])[11:16]
                     thermalStorage.append({'coolingEnergy':round(i[1],2),'polledTime':polledTime})
-    
+                
+                bmscur.close()
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
@@ -1070,6 +1115,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_RAWemsdb)):
       "Refrigerant_temperature":Refrigerant_temperature,
       "Energy_Stored":Energy_Stored,
     })
+        
+    bms_cur.close()
 
     return HotWaterStorage_Response
 
