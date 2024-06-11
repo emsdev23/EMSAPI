@@ -362,6 +362,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     curres = emscur.fetchall()
 
+    Wheeled = 0
+
     for i in curres:
         try:
             curRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
