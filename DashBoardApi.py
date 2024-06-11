@@ -365,14 +365,24 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     Wheeled = 0
 
     for i in curres:
-        try:
-            curRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
-        except:
-            continue
+        if i[5]:
+            try:
+                curRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
+            except Exception as ex:
+                print(ex)
+                curRE = 0
+        else:
+            try:
+                curRE = ((i[2]+i[3])/(i[1]+i[2]+i[3]+i[4]))*100
+            except Exception as ex:
+                print(ex)
+                curRE = 0
 
         Roof = (i[3] / (i[3]+i[2]))*100
 
         Wheeled = (i[2] / (i[2]+i[3]))*100
+
+        print(curRE,Roof,Wheeled)
 
 
     emscur.execute("select polledDate,sum(gridEnergy),sum(wheeledinEnergy),sum(rooftopEnergy),sum(deisel),sum(wheeledinEnergy2)  from EMS.buidingConsumptionDayWise where polledDate <= date_sub(curdate(),interval 7 day) and polledDate >= date_sub(curdate(),interval 13 day);")
@@ -380,10 +390,18 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     prevres = emscur.fetchall()
 
     for i in prevres:
-        try:
-            prevRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
-        except:
-            continue
+        if i[5]:
+            try:
+                prevRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
+            except Exception as ex:
+                print(ex)
+                prevRE = 0
+        else:
+            try:
+                prevRE = ((i[2]+i[3])/(i[1]+i[2]+i[3]+i[4]))*100
+            except Exception as ex:
+                print(ex)
+                prevRE = 0
 
     emscur.execute("select polledDate,gridEnergy,wheeledinEnergy,rooftopEnergy,deisel,wheeledinEnergy2 from EMS.buidingConsumptionDayWise where polledDate <= curdate() and polledDate >= date_sub(curdate(),interval 29 day);")
 
@@ -396,10 +414,18 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     Wheeledm2 = 0
 
     for i in curmres:
-        try:
-            curmRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
-        except:
-            continue
+        if i[5]:
+            try:
+                curmRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
+            except Exception as ex:
+                print(ex)
+                curmRE = 0
+        else:
+            try:
+                curmRE = ((i[2]+i[3])/(i[1]+i[2]+i[3]+i[4]))*100
+            except Exception as ex:
+                print(ex)
+                curmRE = 0
 
         Roofm = (i[3] / (i[3]+i[2]))*100
 
@@ -410,10 +436,18 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     prevmres = emscur.fetchall()
 
     for i in prevmres:
-        try:
-            prevmRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
-        except:
-            continue
+        if i[5]:
+            try:
+                prevmRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
+            except Exception as ex:
+                print(ex)
+                prevmRE = 0
+        else:
+            try:
+                prevmRE = ((i[2]+i[3])/(i[1]+i[2]+i[3]+i[4]))*100
+            except Exception as ex:
+                print(ex)
+                prevmRE = 0
 
     RE_list.append({"CurrentWeek":round(curRE,1),"RoofWeek":round(Roof),"WheeledWeek":round(Wheeled),"diffWeek":round(curRE - prevRE,1),
                     "CurrentMonth":round(curmRE,1),"RoofMont":round(Roofm),"WheeledMonth":round(Wheeledm),"diffMonth":round(curmRE - prevmRE,1)})
