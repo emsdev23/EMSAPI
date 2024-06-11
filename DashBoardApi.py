@@ -456,10 +456,11 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     diselres = bms_cur.fetchall()
 
-    if diselres[0][0] != None:
-        diesel = diselres[0][0]
-    else:
-        diesel = 0
+    if len(diselres) > 0:
+        if diselres[0][0] != None:
+            diesel = diselres[0][0]
+        else:
+            diesel = 0
 
     bms_cur.execute("SELECT avgpowerfactor,minpowerfactor FROM EMS.schneider7230processed where date(polledTime) = curdate() order by polledTime desc limit 1;")
     
@@ -792,7 +793,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
     return thermalStorage
 
 
-@app.get('/Dashboard/ltoBattery')
+@app.get('/Dashboard/ltoBatteryData')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     lto_list = []
     try:
