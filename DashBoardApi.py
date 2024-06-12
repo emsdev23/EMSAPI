@@ -55,6 +55,81 @@ def get_RAWemsdb():
     )
     return db
 
+@app.get('/Dashboard/IoeHourly')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    ioe_list = []
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = processed_db.cursor()
+
+    emscur.execute("""SELECT polledTime,st1chargingEnergy,st2chargingEnergy,st3chargingEnergy,st4chargingEnergy,st5chargingEnergy,
+        st1dischargingEnergy,st2dischargingEnergy,st3dischargingEnergy,st4dischargingEnergy,st5dischargingEnergy,
+        st1packsoc,st2packsoc,st3packsoc,st4packsoc,st5packsoc,
+        st1Availableenergy,st2Availableenergy,st3Availableenergy,st4Availableenergy,st5Availableenergy
+        FROM EMS.IOEbatteryHourly where date(polledTime) = curdate();""")
+    
+    res = emscur.fetchall()
+
+    if len(res) > 0:
+
+        for i in res:
+            if i[1] != None and i[2] != None and i[3] != None and i[4] != None and i[5] != None and i[6] != None and i[7] != None and i[8] != None and i[9] != None and i[10] != None:
+                polledTime = str(i[0])[11:16]
+                ioe_list.append({"polledTime":polledTime,"chg1":i[1],"chg2":i[2],"chg3":i[3],"chg4":i[4],"chg5":i[5],
+                                 "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
+                                 "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
+                                 "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+            else:
+                polledTime = str(i[0])[11:16]
+                ioe_list.append({"polledTime":polledTime,"chg1":0,"chg2":0,"chg3":0,"chg4":0,"chg5":0,
+                                 "dchg1":0,"dchg2":0,"dchg3":0,"dchg4":0,"dchg5":0,"idle":0.1,
+                                 "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
+                                 "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+
+    return ioe_list
+
+
+@app.post('/Dashboard/IoeHourly/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
+    ioe_list = []
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as emscur:
+
+                emscur.execute(f"""SELECT polledTime,st1chargingEnergy,st2chargingEnergy,st3chargingEnergy,st4chargingEnergy,st5chargingEnergy,
+                    st1dischargingEnergy,st2dischargingEnergy,st3dischargingEnergy,st4dischargingEnergy,st5dischargingEnergy,
+                    st1packsoc,st2packsoc,st3packsoc,st4packsoc,st5packsoc,
+                    st1Availableenergy,st2Availableenergy,st3Availableenergy,st4Availableenergy,st5Availableenergy
+                    FROM EMS.IOEbatteryHourly where date(polledTime) = '{value}';""")
+            
+                res = emscur.fetchall()
+
+                if len(res) > 0:
+                    for i in res:
+                        if i[1] != None and i[2] != None and i[3] != None and i[4] != None and i[5] != None and i[6] != None and i[7] != None and i[8] != None and i[9] != None and i[10] != None:
+                            polledTime = str(i[0])[11:16]
+                            ioe_list.append({"polledTime":polledTime,"chg1":i[1],"chg2":i[2],"chg3":i[3],"chg4":i[4],"chg5":i[5],
+                                            "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
+                                            "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
+                                            "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+                        else:
+                            polledTime = str(i[0])[11:16]
+                            ioe_list.append({"polledTime":polledTime,"chg1":0,"chg2":0,"chg3":0,"chg4":0,"chg5":0,
+                                            "dchg1":0,"dchg2":0,"dchg3":0,"dchg4":0,"dchg5":0,"idle":0.1,
+                                            "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
+                                            "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+    
+    return ioe_list
+
+
 @app.get('/Dashboard/REtillDay')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     clients = []
