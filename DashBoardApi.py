@@ -55,6 +55,281 @@ def get_RAWemsdb():
     )
     return db
 
+
+@app.get('/Dashboard/TopTenClients')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
+    TopTenClients_Response = []
+    try:
+        processed_db = get_meterdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    bms_cur = processed_db.cursor()
+
+    bms_cur.execute("SELECT ACRI,pfizer,SGRI,tatacommunications,ginger,axxlent,caterpillar,IFMR,NMS,TCS FROM meterdata.toptenclientsdaywise where date(timestamp)=curdate();")
+   
+    res = bms_cur.fetchall()
+
+    if res[0][0] != None:
+        arci = round(res[0][0]) 
+    else:
+        arci = 0
+
+    if res[0][1] != None:
+        pfizer = round(res[0][1]) 
+    else:
+        pfizer = 0
+
+    if res[0][2] != None:
+        SGRI = round(res[0][2]) 
+    else:
+        SGRI = 0
+
+    if res[0][3] != None:
+        tatacommunications = round(res[0][3]) 
+    else:
+        tatacommunications = 0
+
+    if res[0][4] != None:
+        ginger = round(res[0][4]) 
+    else:
+        ginger = 0
+    
+    if res[0][5] != None:
+        axxlent = round(res[0][5]) 
+    else:
+        axxlent = 0
+    
+    if res[0][6] != None:
+        caterpillar = round(res[0][6]) 
+    else:
+        caterpillar = 0
+
+    if res[0][7] != None:
+        IFMR = round(res[0][7]) 
+    else:
+        IFMR = 0
+    
+    if res[0][8] != None:
+        NMS = round(res[0][8]) 
+    else:
+        NMS = 0
+    
+    if res[0][9] != None:
+        TCS = round(res[0][9]) 
+    else:
+        TCS = 0
+
+
+    EnergyDict = {'ACRI':arci,'pfizer':pfizer,'SGRI':SGRI,'tatacommunications':tatacommunications,'ginger':ginger,
+                                   'axxlent':axxlent,'caterpillar':caterpillar,'IFMR':IFMR,
+                                   'NMS':NMS,'TCS':TCS}
+    
+    top_four = sorted(EnergyDict.items(), key=lambda item: item[1], reverse=True)[:4]
+
+    TopTenClients_Response.append(top_four)
+
+    bms_cur.close()
+    processed_db.close()
+
+    return TopTenClients_Response
+
+
+@app.post('/Dashboard/TopTenClients/filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meterdb)):
+    TopTenClients_Response = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT ACRI,pfizer,SGRI,tatacommunications,ginger,axxlent,caterpillar,IFMR,NMS,TCS FROM meterdata.toptenclientsdaywise where date(timestamp) = '{value}'")
+
+                res = bmscur.fetchall()
+                print(res)
+
+                if res[0][0] != None:
+                    arci = round(res[0][0]) 
+                else:
+                    arci = 0
+
+                if res[0][1] != None:
+                    pfizer = round(res[0][1]) 
+                else:
+                    pfizer = 0
+
+                if res[0][2] != None:
+                    SGRI = round(res[0][2]) 
+                else:
+                    SGRI = 0
+
+                if res[0][3] != None:
+                    tatacommunications = round(res[0][3]) 
+                else:
+                    tatacommunications = 0
+
+                if res[0][4] != None:
+                    ginger = round(res[0][4]) 
+                else:
+                    ginger = 0
+                
+                if res[0][5] != None:
+                    axxlent = round(res[0][5]) 
+                else:
+                    axxlent = 0
+                
+                if res[0][6] != None:
+                    caterpillar = round(res[0][6]) 
+                else:
+                    caterpillar = 0
+
+                if res[0][7] != None:
+                    IFMR = round(res[0][7]) 
+                else:
+                    IFMR = 0
+                
+                if res[0][8] != None:
+                    NMS = round(res[0][8]) 
+                else:
+                    NMS = 0
+                
+                if res[0][9] != None:
+                    TCS = round(res[0][9]) 
+                else:
+                    TCS = 0
+
+                EnergyDict = {'ACRI':arci,'pfizer':pfizer,'SGRI':SGRI,'tatacommunications':tatacommunications,'ginger':ginger,
+                                            'axxlent':axxlent,'caterpillar':caterpillar,'IFMR':IFMR,
+                                            'NMS':NMS,'TCS':TCS}
+                
+                top_four = sorted(EnergyDict.items(), key=lambda item: item[1], reverse=True)[:4]
+
+                TopTenClients_Response.append(top_four)
+                
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return TopTenClients_Response
+
+
+@app.get('/Dashboard/batterytimes')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    operationLi = []
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = processed_db.cursor()
+
+    emscur.execute("""select ioeChg,ioeDchg,ltoChg,ltoDchg,upsChg,upsDchg from EMS.batteryLastOpern order by recordId desc limit 1;""")
+    
+    res = emscur.fetchall()
+
+    if len(res) > 0:
+        operationLi.append({'ioeChg':str(res[0][0]),
+                            'ioeDchg':str(res[0][1]),
+                            'ltoChg':str(res[0][2]),
+                            'ltoDchg':str(res[0][3]),
+                            'upsChg':str(res[0][4]),
+                            'upsDchg':str(res[0][5])})
+
+    return operationLi
+
+
+@app.get('/Dashboard/IoeTotal')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    ioe_list = []
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = processed_db.cursor()
+
+    emscur.execute("""SELECT sum(st1chargingEnergy),sum(st2chargingEnergy),sum(st3chargingEnergy),sum(st4chargingEnergy),sum(st5chargingEnergy)
+        FROM EMS.IOEbatteryHourly where date(polledTime) = curdate();""")
+    
+    res = emscur.fetchall()
+
+    chg = 0
+
+    for i in res:
+        if i != None:
+            chg += i[0]
+    
+    emscur.execute("""SELECT sum(st1dischargingEnergy),sum(st2dischargingEnergy),sum(st3dischargingEnergy),sum(st4dischargingEnergy),sum(st5dischargingEnergy)
+        FROM EMS.IOEbatteryHourly where date(polledTime) = curdate();""")
+
+    res1 = emscur.fetchall()
+
+    dchg = 0
+
+    for i in res1:
+        if i != None:
+            dchg += abs(i[0])
+
+    
+    ioe_list.append({'chargeEnergy':round(chg,2),'dischargeEnergy':-abs(round(dchg,2))})
+
+    return ioe_list
+
+
+@app.get('/Dashboard/ltoTotal')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    lto_list = []
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = processed_db.cursor()
+
+    emscur.execute("SELECT sum(dischargingEnergy),sum(chargingEnergy) FROM EMS.LTObatteryHourly where date(polledTime) = curdate();")
+
+    chg = 0
+    dchg = 0
+
+    res = emscur.fetchall()
+
+    for i in res:
+        if i[0] != None:
+            dchg = i[0]
+        if i[1] != None:
+            chg = i[1]
+
+    lto_list.append({"chargeEnergy":round(chg,2),"dischargeEnergy":-abs(round(dchg,2))})
+
+    return lto_list
+
+
+@app.get('/Dashboard/upsTotal')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    ups_list = []
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = processed_db.cursor()
+
+    emscur.execute("SELECT sum(chargingEnergy),sum(discharhingEnergy) FROM EMS.UPSbatteryHourly where date(polledTime) = curdate();")
+
+    res = emscur.fetchall()
+
+    dchg = 0
+    chg = 0
+    for i in res:
+        if i[0] != None:
+            chg = i[0]
+        if i[1] != None:
+            dchg = i[1]
+
+    ups_list.append({'chargeEnergy':chg,'dischargeEnergy':dchg})
+
+    return ups_list
+
 @app.get('/Dashboard/IoeHourly')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     ioe_list = []
@@ -76,16 +351,17 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     if len(res) > 0:
 
         for i in res:
-            if i[1] != None and i[2] != None and i[3] != None and i[4] != None and i[5] != None and i[6] != None and i[7] != None and i[8] != None and i[9] != None and i[10] != None:
-                polledTime = str(i[0])[11:16]
-                ioe_list.append({"polledTime":polledTime,"chg1":i[1],"chg2":i[2],"chg3":i[3],"chg4":i[4],"chg5":i[5],
-                                 "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
-                                 "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
-                                 "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
-            else:
+            if i[1] == None and i[2] == None and i[3] == None and i[4] == None and i[5] == None and i[6] == None and i[7] == None and i[8] == None and i[9] == None and i[10] == None:
                 polledTime = str(i[0])[11:16]
                 ioe_list.append({"polledTime":polledTime,"chg1":0,"chg2":0,"chg3":0,"chg4":0,"chg5":0,
                                  "dchg1":0,"dchg2":0,"dchg3":0,"dchg4":0,"dchg5":0,"idle":0.1,
+                                 "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
+                                 "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+                
+            else:
+                polledTime = str(i[0])[11:16]
+                ioe_list.append({"polledTime":polledTime,"chg1":i[1],"chg2":i[2],"chg3":i[3],"chg4":i[4],"chg5":i[5],
+                                 "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
                                  "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
                                  "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
 
@@ -110,19 +386,20 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 res = emscur.fetchall()
 
                 if len(res) > 0:
-                    for i in res:
-                        if i[1] != None and i[2] != None and i[3] != None and i[4] != None and i[5] != None and i[6] != None and i[7] != None and i[8] != None and i[9] != None and i[10] != None:
-                            polledTime = str(i[0])[11:16]
-                            ioe_list.append({"polledTime":polledTime,"chg1":i[1],"chg2":i[2],"chg3":i[3],"chg4":i[4],"chg5":i[5],
-                                            "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
-                                            "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
-                                            "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
-                        else:
-                            polledTime = str(i[0])[11:16]
-                            ioe_list.append({"polledTime":polledTime,"chg1":0,"chg2":0,"chg3":0,"chg4":0,"chg5":0,
-                                            "dchg1":0,"dchg2":0,"dchg3":0,"dchg4":0,"dchg5":0,"idle":0.1,
-                                            "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
-                                            "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+                            for i in res:
+                                if i[1] == None and i[2] == None and i[3] == None and i[4] == None and i[5] == None and i[6] == None and i[7] == None and i[8] == None and i[9] == None and i[10] == None:
+                                    polledTime = str(i[0])[11:16]
+                                    ioe_list.append({"polledTime":polledTime,"chg1":0,"chg2":0,"chg3":0,"chg4":0,"chg5":0,
+                                                    "dchg1":0,"dchg2":0,"dchg3":0,"dchg4":0,"dchg5":0,"idle":0.1,
+                                                    "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
+                                                    "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+                                    
+                                else:
+                                    polledTime = str(i[0])[11:16]
+                                    ioe_list.append({"polledTime":polledTime,"chg1":i[1],"chg2":i[2],"chg3":i[3],"chg4":i[4],"chg5":i[5],
+                                                    "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
+                                                    "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
+                                                    "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
