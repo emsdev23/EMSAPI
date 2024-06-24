@@ -121,13 +121,14 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
         TCS = 0
 
 
-    EnergyDict = {'ACRI':arci,'pfizer':pfizer,'SGRI':SGRI,'tatacommunications':tatacommunications,'ginger':ginger,
-                                   'axxlent':axxlent,'caterpillar':caterpillar,'IFMR':IFMR,
+    EnergyDict = {'ARCI':arci,'Pfizer':pfizer,'SGRI':SGRI,'Tata Communications':tatacommunications,'Ginger':ginger,
+                                   'Axxlent':axxlent,'Caterpillar':caterpillar,'IFMR':IFMR,
                                    'NMS':NMS,'TCS':TCS}
     
     top_four = sorted(EnergyDict.items(), key=lambda item: item[1], reverse=True)[:4]
 
-    TopTenClients_Response.append(top_four)
+    for i in top_four:
+        TopTenClients_Response.append({'CompanyName':i[0],'Energy':i[1]})
 
     bms_cur.close()
     processed_db.close()
@@ -199,14 +200,15 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
                 else:
                     TCS = 0
 
-                EnergyDict = {'ACRI':arci,'pfizer':pfizer,'SGRI':SGRI,'tatacommunications':tatacommunications,'ginger':ginger,
-                                            'axxlent':axxlent,'caterpillar':caterpillar,'IFMR':IFMR,
-                                            'NMS':NMS,'TCS':TCS}
+                EnergyDict = {'ARCI':arci,'Pfizer':pfizer,'SGRI':SGRI,'Tata Communications':tatacommunications,'Ginger':ginger,
+                                   'Axxlent':axxlent,'Caterpillar':caterpillar,'IFMR':IFMR,
+                                   'NMS':NMS,'TCS':TCS}
                 
                 top_four = sorted(EnergyDict.items(), key=lambda item: item[1], reverse=True)[:4]
-
-                TopTenClients_Response.append(top_four)
                 
+                for i in top_four:
+                    TopTenClients_Response.append({'CompanyName':i[0],'Energy':i[1]}) 
+
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
@@ -223,17 +225,73 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     
     emscur = processed_db.cursor()
 
-    emscur.execute("""select ioeChg,ioeDchg,ltoChg,ltoDchg,upsChg,upsDchg from EMS.batteryLastOpern order by recordId desc limit 1;""")
-    
+    emscur.execute("""select ioeChgStart,ioeChgEnd,ioeDchgStart,ioeDchgEnd,ltoChgStart,ltoChgEnd,ltoDchgStart,ltoDchgEnd,
+                        upsChgStart,upsChgEnd,upsDchgStart,upsDchgEnd
+                        from EMS.batteryLastOpern order by recordId desc limit 1;""")
+                            
     res = emscur.fetchall()
 
+    if res[0][0] != None:
+        dt = str(res[0][0])[0:10]
+        st = str(res[0][0])[11:16]
+        ed = str(res[0][1])[11:16]
+
+        ioechg = dt+", "+st+" - "+ed
+    else:
+        ioechg = None
+
+    if res[0][2] != None:
+        dt = str(res[0][2])[0:10]
+        st = str(res[0][2])[11:16]
+        ed = str(res[0][3])[11:16]
+
+        ioedchg = dt+", "+st+" - "+ed
+    else:
+        ioedchg = None
+
+    if res[0][4] != None:
+        dt = str(res[0][4])[0:10]
+        st = str(res[0][4])[11:16]
+        ed = str(res[0][5])[11:16]
+
+        ltochg = dt+", "+st+" - "+ed
+    else:
+        ltochg = None
+
+    if res[0][6] != None:
+        dt = str(res[0][6])[0:10]
+        st = str(res[0][6])[11:16]
+        ed = str(res[0][7])[11:16]
+
+        ltodchg = dt+", "+st+" - "+ed
+    else:
+        ltodchg = None
+
+    if res[0][8] != None:
+        dt = str(res[0][8])[0:10]
+        st = str(res[0][8])[11:16]
+        ed = str(res[0][9])[11:16]
+
+        upschg = dt+", "+st+" - "+ed
+    else:
+        upschg = None
+
+    if res[0][10] != None:
+        dt = str(res[0][10])[0:10]
+        st = str(res[0][11])[11:16]
+        ed = str(res[0][11])[11:16]
+
+        upsdchg = dt+", "+st+" - "+ed
+    else:
+        upsdchg = None
+
     if len(res) > 0:
-        operationLi.append({'ioeChg':str(res[0][0]),
-                            'ioeDchg':str(res[0][1]),
-                            'ltoChg':str(res[0][2]),
-                            'ltoDchg':str(res[0][3]),
-                            'upsChg':str(res[0][4]),
-                            'upsDchg':str(res[0][5])})
+        operationLi.append({'ioeChg':ioechg,
+                            'ioeDchg':ioedchg,
+                            'ltoChg':ltochg,
+                            'ltoDchg':ltodchg,
+                            'upsChg':upschg,
+                            'upsDchg':upsdchg})
 
     return operationLi
 
@@ -256,7 +314,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     chg = 0
 
     for i in res:
-        if i != None:
+        if i[0] != None:
             chg += i[0]
     
     emscur.execute("""SELECT sum(st1dischargingEnergy),sum(st2dischargingEnergy),sum(st3dischargingEnergy),sum(st4dischargingEnergy),sum(st5dischargingEnergy)
@@ -267,7 +325,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     dchg = 0
 
     for i in res1:
-        if i != None:
+        if i[0] != None:
             dchg += abs(i[0])
 
     
@@ -716,52 +774,118 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     
     emscur = processed_db.cursor()
     
-    emscur.execute("select polledDate,sum(gridEnergy),sum(wheeledinEnergy),sum(rooftopEnergy),sum(deisel),sum(wheeledinEnergy2) from EMS.buidingConsumptionDayWise where polledDate <= curdate() and polledDate >= date_sub(curdate(),interval 6 day);")
+    emscur.execute("select polledDate,sum(gridEnergy),sum(wheeledinEnergy),sum(rooftopEnergy),sum(deisel),sum(wheeledinEnergy2),sum(windEnergy) from EMS.buidingConsumptionDayWise where polledDate <= curdate() and polledDate >= date_sub(curdate(),interval 6 day);")
 
     curres = emscur.fetchall()
 
-    Wheeled = 0
-
     for i in curres:
-        if i[5]:
-            try:
-                curRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
-            except Exception as ex:
-                print(ex)
-                curRE = 0
+        if i[1] != None:
+            gd = i[1]
         else:
-            try:
-                curRE = ((i[2]+i[3])/(i[1]+i[2]+i[3]+i[4]))*100
-            except Exception as ex:
-                print(ex)
-                curRE = 0
+            gd = 0
+        
+        if i[2] != None:
+            wh = i[2]
+        else:
+            wh = 0
 
-        Roof = (i[3] / (i[3]+i[2]))*100
+        if i[3] != None:
+            rf = i[3]
+        else:
+            rf = 0
+        
+        if i[4] != None:
+            dg = i[4]
+        else:
+            dg = 0
+        
+        if i[5] != None:
+            wh2 = i[5]
+        else:
+            wh2 = 0
 
-        Wheeled = (i[2] / (i[2]+i[3]))*100
+        if i[6] != None:
+            wd = i[6]
+        else:
+            wd = 0
 
-        print(curRE,Roof,Wheeled)
+    
+    try:
+        curRE = ((rf+wh+wh2+wd)/(wh+wh2+rf+dg+gd+wd))*100
+    except Exception as ex:
+        print(ex)
+        curRE = 0
+
+    try:
+        Roof = (rf / (rf+wh+wh2+wd))*100
+    except Exception as ex:
+        print(ex)
+        Roof = 0
+
+    try:
+        Wheeled = (wh / (rf+wh+wh2+wd))*100
+    except Exception as ex:
+        print(ex)
+        Wheeled = 0
+
+    try:
+        Wheeled2 = (wh2 / (rf+wh+wh2+wd))*100
+    except Exception as ex:
+        Wheeled2 = 0
+
+    try:
+        wind = (wd / (rf+wh+wh2+wd))*100
+    except Exception as ex:
+        wind = 0
+
+    print(curRE,Roof,Wheeled,Wheeled2,wind)
 
 
-    emscur.execute("select polledDate,sum(gridEnergy),sum(wheeledinEnergy),sum(rooftopEnergy),sum(deisel),sum(wheeledinEnergy2)  from EMS.buidingConsumptionDayWise where polledDate <= date_sub(curdate(),interval 7 day) and polledDate >= date_sub(curdate(),interval 13 day);")
+    emscur.execute("select polledDate,sum(gridEnergy),sum(wheeledinEnergy),sum(rooftopEnergy),sum(deisel),sum(wheeledinEnergy2),sum(windEnergy)  from EMS.buidingConsumptionDayWise where polledDate <= date_sub(curdate(),interval 7 day) and polledDate >= date_sub(curdate(),interval 13 day);")
 
     prevres = emscur.fetchall()
 
     for i in prevres:
-        if i[5]:
-            try:
-                prevRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
-            except Exception as ex:
-                print(ex)
-                prevRE = 0
-        else:
-            try:
-                prevRE = ((i[2]+i[3])/(i[1]+i[2]+i[3]+i[4]))*100
-            except Exception as ex:
-                print(ex)
-                prevRE = 0
 
-    emscur.execute("select polledDate,gridEnergy,wheeledinEnergy,rooftopEnergy,deisel,wheeledinEnergy2 from EMS.buidingConsumptionDayWise where polledDate <= curdate() and polledDate >= date_sub(curdate(),interval 29 day);")
+        if i[1] != None:
+            gdp = i[1]
+        else:
+            gdp = 0
+        
+        if i[2] != None:
+            whp = i[2]
+        else:
+            whp = 0
+
+        if i[3] != None:
+            rfp = i[3]
+        else:
+            rfp = 0
+        
+        if i[4] != None:
+            dgp = i[4]
+        else:
+            dgp = 0
+        
+        if i[5] != None:
+            wh2p = i[5]
+        else:
+            wh2p = 0
+
+        if i[6] != None:
+            wdp = i[6]
+        else:
+            wdp = 0
+
+    
+    try:
+        prevRE = ((rfp+whp+wh2p+wdp)/(whp+wh2p+rfp+dgp+gdp+wdp))*100
+    except Exception as ex:
+        print(ex)
+        prevRE = 0
+
+    emscur.execute("""select polledDate,sum(gridEnergy),sum(wheeledinEnergy),sum(rooftopEnergy),sum(deisel),sum(wheeledinEnergy2),sum(windEnergy) 
+from EMS.buidingConsumptionDayWise where polledDate <= curdate() and polledDate >= date_sub(curdate(),interval 29 day);""")
 
     curmres = emscur.fetchall()
 
@@ -770,45 +894,89 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     Wheeledm = 0
     prevmRE = 0
     Wheeledm2 = 0
+    Windm = 0
 
     for i in curmres:
-        if i[5]:
-            try:
-                curmRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
-            except Exception as ex:
-                print(ex)
-                curmRE = 0
+        if i[1]:
+            grid = i[1]
         else:
-            try:
-                curmRE = ((i[2]+i[3])/(i[1]+i[2]+i[3]+i[4]))*100
-            except Exception as ex:
-                print(ex)
-                curmRE = 0
+            grid = 0
+        if i[2]:
+            wheeled = i[2]
+        else:
+            wheeled = 0
+        if i[3]:
+            roof = i[3]
+        else:
+            roof = 0
+        if i[4]:
+            diesel = i[4]
+        else:
+            diesel = 0
+        if i[5]:
+            wheeled2 = i[5]
+        else:
+            wheeled2 = 0
+        if i[6]:
+            windm = i[6]
+        else:
+            windm = 0
 
-        Roofm = (i[3] / (i[3]+i[2]))*100
+    try:
+        curmRE = ((roof+wheeled+wheeled2+windm)/(grid+diesel+roof+wheeled+wheeled2+windm))*100
+    except Exception as ex:
+        print(ex)
+        curmRE = 0
+    
+    Roofm = (roof / (roof+wheeled+wheeled2+wind))*100
 
-        Wheeledm = (i[2] / (i[2]+i[3]))*100
+    Wheeledm = (wheeled / (roof+wheeled+wheeled2+wind))*100
 
-    emscur.execute("select polledDate,gridEnergy,wheeledinEnergy,rooftopEnergy,deisel,wheeledinEnergy2 from EMS.buidingConsumptionDayWise where polledDate <= date_sub(curdate(),interval 30 day) and polledDate >= date_sub(curdate(),interval 59 day);")
+    Wheeledm2 = (wheeled2 / (roof+wheeled+wheeled2+wind))*100
+
+    Windm = (windm / (roof+wheeled+wheeled2+wind))*100
+
+    emscur.execute("""select polledDate,sum(gridEnergy),sum(wheeledinEnergy),sum(rooftopEnergy),sum(deisel),sum(wheeledinEnergy2),sum(windEnergy) 
+                from EMS.buidingConsumptionDayWise where polledDate <= date_sub(curdate(),interval 30 day) and polledDate >= date_sub(curdate(),interval 59 day);""")
 
     prevmres = emscur.fetchall()
 
     for i in prevmres:
-        if i[5]:
-            try:
-                prevmRE = ((i[2]+i[3]+i[5])/(i[1]+i[2]+i[3]+i[4]+i[5]))*100
-            except Exception as ex:
-                print(ex)
-                prevmRE = 0
+        if i[1]:
+            gridp = i[1]
         else:
-            try:
-                prevmRE = ((i[2]+i[3])/(i[1]+i[2]+i[3]+i[4]))*100
-            except Exception as ex:
-                print(ex)
-                prevmRE = 0
+            gridp = 0
+        if i[2]:
+            wheeledp = i[2]
+        else:
+            wheeledp = 0
+        if i[3]:
+            roofp = i[3]
+        else:
+            roofp = 0
+        if i[4]:
+            dieselp = i[4]
+        else:
+            dieselp = 0
+        if i[5]:
+            wheeled2p = i[5]
+        else:
+            wheeled2p = 0
+        if i[6]:
+            windmp = i[6]
+        else:
+            windmp = 0
+        
 
-    RE_list.append({"CurrentWeek":round(curRE,1),"RoofWeek":round(Roof),"WheeledWeek":round(Wheeled),"diffWeek":round(curRE - prevRE,1),
-                    "CurrentMonth":round(curmRE,1),"RoofMont":round(Roofm),"WheeledMonth":round(Wheeledm),"diffMonth":round(curmRE - prevmRE,1)})
+    try:
+        prevmRE = ((roofp+wheeledp+wheeled2p+windmp)/(gridp+dieselp+roofp+wheeledp+wheeled2p+windmp))*100
+    except Exception as ex:
+        print(ex)
+        prevmRE = 0
+
+
+    RE_list.append({"CurrentWeek":round(curRE,1),"RoofWeek":round(Roof),"WheeledWeek":round(Wheeled),"Wheeled2Week":round(Wheeled2),"windWeek":round(wind),"diffWeek":round(curRE - prevRE,1),
+                    "CurrentMonth":round(curmRE,1),"RoofMont":round(Roofm),"WheeledMonth":round(Wheeledm),"WheeledMonth2":round(Wheeledm2),"windMonth":round(Windm),"diffMonth":round(curmRE - prevmRE,1)})
 
     emscur.close()
 
@@ -825,7 +993,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT round(sum(gridEnergy)),round(sum(wheeledinEnergy)),round(sum(rooftopEnergy)),round(sum(wheeledinEnergy2)) FROM EMS.buildingConsumption where date(polledTime) = curdate();")
+    bms_cur.execute("SELECT round(sum(gridEnergy)),round(sum(wheeledinEnergy)),round(sum(rooftopEnergy)),round(sum(wheeledinEnergy2)),round(sum(windEnergy)) FROM EMS.buildingConsumption where date(polledTime) = curdate();")
     
     res = bms_cur.fetchall()
 
@@ -845,6 +1013,15 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
         wheeled2 = res[0][3]
     else:
         wheeled2 = 0
+    if res[0][4] != None:
+        wind = res[0][4]
+    else:
+        wind = 0
+
+    grid = grid-wind-wheeled2
+
+    if grid < 0 :
+        grid = 0
 
     bms_cur.execute("SELECT round(total_energy_difference) FROM meterdata.diselenergy where date(polled_time) = curdate() order by polled_time desc limit 1;")
 
@@ -855,6 +1032,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
             diesel = diselres[0][0]
         else:
             diesel = 0
+    else:
+        diesel = 0
 
     bms_cur.execute("SELECT avgpowerfactor,minpowerfactor FROM EMS.schneider7230processed where date(polledTime) = curdate() order by polledTime desc limit 1;")
     
@@ -863,9 +1042,9 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     avgfac = powerres[0][0]
     minfac = powerres[0][1]
 
-    RE = round((wheeled+wheeled2+rooftop)/(grid+wheeled2+wheeled+diesel)*100,3)
+    RE = round((wheeled+wheeled2+rooftop+wind)/(grid+wheeled2+wheeled+diesel+wind)*100,3)
 
-    Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':grid,
+    Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':grid,'wind':wind,
                        'diesel':diesel,'avgFactor':avgfac,'minFactor':minfac,'RE':RE})
     bms_cur.close()
 
@@ -881,7 +1060,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         if value and isinstance(value, str):
             with db.cursor() as bms_cur:
 
-                bms_cur.execute(f"SELECT round(sum(gridEnergy)),round(sum(wheeledinEnergy)),round(sum(rooftopEnergy)),round(sum(wheeledinEnergy2)) FROM EMS.buildingConsumption where date(polledTime) = '{value}';")
+                bms_cur.execute(f"SELECT round(sum(bmsgrid)),round(sum(wheeledinEnergy)),round(sum(rooftopEnergy)),round(sum(wheeledinEnergy2)),round(sum(windEnergy)) FROM EMS.buildingConsumption where date(polledTime) = '{value}';")
                 
                 res = bms_cur.fetchall()
 
@@ -902,12 +1081,25 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 else:
                     wheeled2 = 0
 
+                if res[0][4] != None:
+                    wind = res[0][4]
+                else:
+                    wind = 0
+
+                grid = grid-wind-wheeled-wheeled2
+
+                if grid < 0 :
+                    grid = 0
+
                 bms_cur.execute(f"SELECT sum(Energy) FROM EMS.DGHourly where date(polledTime) = '{value}';")
 
                 diselres = bms_cur.fetchall()
 
-                if diselres[0][0] != None:
-                    diesel = diselres[0][0]
+                if len(diselres) > 0:
+                    if diselres[0][0] != None:
+                        diesel = diselres[0][0]
+                    else:
+                        diesel = 0
                 else:
                     diesel = 0
 
@@ -918,9 +1110,9 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 avgfac = powerres[0][0]
                 minfac = powerres[0][1]
 
-                RE = (wheeled+wheeled2+rooftop)/(grid+wheeled2+wheeled+diesel)
+                RE = ((wheeled+wheeled2+rooftop+wind)/(grid+wheeled2+wheeled+diesel+wind))*100
 
-                Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':grid,
+                Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':grid,'wind':wind,
                                 'diesel':diesel,'avgFactor':avgfac,'minFactor':minfac,'RE':RE})
                 bms_cur.close()
     
