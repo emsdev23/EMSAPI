@@ -414,7 +414,7 @@ def peak_demand_min():
     else:
         maxAvg = 4000
 
-    safeLimit = maxAvg - ((maxAvg*1)/100)
+    safeLimit = maxAvg - ((maxAvg*5)/100)
 
     bms_cur.execute("SELECT polledTime,totalApparentPower2 FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling WHERE DATE(polledTime) = curdate()")
 
