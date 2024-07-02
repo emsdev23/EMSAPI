@@ -257,6 +257,85 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
     except mysql.connector.Error as e:
         print(e)
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+    
+
+@app.get('/Analysis/TopElectricClients')
+def topCoolingClients(db: mysql.connector.connect = Depends(get_meterdb)):
+    ClientLi = []
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    awscur = aws_db.cursor()
+    
+    awscur.execute("""SELECT tenantname,sum(Energy) AS TotalEnergy FROM EMS.Clientshourlysum 
+                      where date(polledTime) = curdate() GROUP BY tenantname 
+                      order by TotalEnergy desc limit 10; """)
+    
+    limitres = awscur.fetchall()
+
+    ClientList = {}
+
+    for i in limitres:
+        awscur.execute(f"""select polledTime,tenantname,Energy FROM EMS.Clientshourlysum  
+                           where date(polledTime) = curdate() and tenantname = '{i[0]}';""")
+        
+        res = awscur.fetchall()
+
+        for j in res:
+            if j[1] in ClientList.keys():
+                polledTime = str(j[0])[11:16]
+                ClientList[j[1]].append({'polledTime':polledTime,'Energy':j[2]})
+            else:
+                polledTime = str(j[0])[11:16]
+                ClientList[j[1]] = [{'polledTime':polledTime,'Energy':j[2]}]
+
+    finalRes = process_energy_data(ClientList)
+
+    ClientLi = [finalRes]
+
+    return ClientLi
+
+@app.post('/Analysis/TopElectricClients/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    ClientLi = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as awscur:
+                awscur.execute(f"""SELECT tenantname,SUM(Energy) AS TotalEnergy FROM EMS.Clientshourlysum 
+                      where date(polledTime) = '{value}' GROUP BY tenantname
+                      order by TotalEnergy desc limit 10;""")
+    
+                limitres = awscur.fetchall()
+
+                ClientList = {}
+
+                for i in limitres:
+                    awscur.execute(f"""select polledTime,tenantname,Energy FROM EMS.Clientshourlysum  
+                                    where date(polledTime) = '{value}' and tenantname = '{i[0]}';""")
+                    
+                    res = awscur.fetchall()
+
+                    for i in res:
+                        if i[1] in ClientList.keys():
+                            polledTime = str(i[0])[11:16]
+                            ClientList[i[1]].append({'polledTime':polledTime,'Energy':i[2]})
+                        else:
+                            polledTime = str(i[0])[11:16]
+                            ClientList[i[1]] = [{'polledTime':polledTime,'Energy':i[2]}]
+
+                finalRes = process_energy_data(ClientList)
+
+                ClientLi = [finalRes]
+                
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+
+    return ClientLi
 
 @app.get('/Analysis/TopCoolingClients')
 def topCoolingClients(db: mysql.connector.connect = Depends(get_meterdb)):
