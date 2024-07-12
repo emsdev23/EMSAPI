@@ -74,6 +74,84 @@ def process_energy_data(data):
 
     return result
 
+
+
+@app.post('/Analysis/TopElectricClients/search')
+async def peak_demand_date(request: Request, db: mysql.connector.connect = Depends(get_awsdb)):
+    electricalEnergyData = []
+    try:
+        data = await request.json()
+        value = data.get('date')
+        print(value,type(value))
+        tenantNames = data.get('tenantNames', [])  # Assuming tenantNames is a list
+
+        if value and isinstance(value, str) and tenantNames:
+            tenantNames_str = ', '.join([f"'{name}'" for name in tenantNames])
+            query = f"""
+                SELECT energy, tenantname, polledtime 
+                FROM EMS.Clientshourlysum 
+                WHERE date(polledtime) = %s AND tenantname IN ({tenantNames_str});
+            """
+
+            with db.cursor() as ems_cur:
+                ems_cur.execute(query, (value,))
+                res = ems_cur.fetchall()
+
+                for i in res:
+                    polledTime = str(i[2])[11:16]
+                    client_energy = 0 if i[0] is None else round(i[0], 2)
+                    electricalEnergyData.append({'polledTime': polledTime, "tenantname": i[1], "client_energy": client_energy})
+            
+            return electricalEnergyData
+        
+        elif tenantNames:
+            tenantNames_str = ', '.join([f"'{name}'" for name in tenantNames])
+
+            with db.cursor() as ems_cur:
+                ems_cur.execute(f"""
+                    SELECT energy, tenantname, polledtime 
+                    FROM EMS.Clientshourlysum 
+                    WHERE date(polledtime) = curdate() AND tenantname IN ({tenantNames_str});
+                    """)
+                res = ems_cur.fetchall()
+
+                for i in res:
+                    polledTime = str(i[2])[11:16]
+                    client_energy = 0 if i[0] is None else round(i[0], 2)
+                    electricalEnergyData.append({'polledTime': polledTime, "tenantname": i[1], "client_energy": client_energy})
+            
+            return electricalEnergyData
+        else:
+            raise HTTPException(status_code=400, detail="Invalid request parameters")
+    except mysql.connector.Error as e:
+        print(e)
+        
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+    except Exception as e:
+        print(e)
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+    except:
+        electricalEnergyData=[]
+        try:
+            value = data.get('date')
+            clientName=""
+            if value and isinstance(value, str):
+                with db.cursor() as bmscur:
+                    ems_cur.execute(f"select energy,tenantname,polledtime from EMS.Clientshourlysum where date(polledtime)='${value}' AND tenantname IN ('${clientName}');")
+                    res = ems_cur.fetchall()
+            for i in res:
+                polledTime = str(i[2])[11:19]
+                if(i[0]==None):
+                    client_energy=0
+                else:
+                    client_energy=round(i[0],2)
+                electricalEnergyData.append({'polledTime':polledTime,"tenantname":i[1],"client_energy":client_energy})
+            return electricalEnergyData
+        except mysql.connector.Error as e:
+            print(e)
+            return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
 @app.post('/Analysis/TopCoolingClients/search')
 async def peak_demand_date(request: Request, db: mysql.connector.connect = Depends(get_awsdb)):
     electricalEnergyData = []
@@ -96,12 +174,28 @@ async def peak_demand_date(request: Request, db: mysql.connector.connect = Depen
                 ems_cur.execute(query, (value,))
                 res = ems_cur.fetchall()
 
-            for i in res:
-                polledTime = str(i[2])[11:16]
-                client_energy = 0 if i[0] is None else round(i[0], 2)
-                electricalEnergyData.append({'polledTime': polledTime, "tenantname": i[1], "client_energy": client_energy})
+                for i in res:
+                    polledTime = str(i[2])[11:16]
+                    client_energy = 0 if i[0] is None else round(i[0], 2)
+                    electricalEnergyData.append({'polledTime': polledTime, "tenantname": i[1], "client_energy": client_energy})
             
             return electricalEnergyData
+        elif tenantNames:
+            tenantNames_str = ', '.join([f"'{name}'" for name in tenantNames])
+            with db.cursor() as ems_cur:
+                ems_cur.execute(f"""
+                    SELECT energy, tenantname, polledtime 
+                    FROM EMS.Clientscoolinghourlysum 
+                    WHERE date(polledtime) = curdate() AND tenantname IN ({tenantNames_str});
+                """)
+
+                res = ems_cur.fetchall()
+
+                for i in res:
+                    polledTime = str(i[2])[11:16]
+                    client_energy = 0 if i[0] is None else round(i[0], 2)
+                    electricalEnergyData.append({'polledTime': polledTime, "tenantname": i[1], "client_energy": client_energy})
+                return electricalEnergyData
         else:
             raise HTTPException(status_code=400, detail="Invalid request parameters")
     except mysql.connector.Error as e:
@@ -110,24 +204,67 @@ async def peak_demand_date(request: Request, db: mysql.connector.connect = Depen
     except Exception as e:
         print(e)
         return JSONResponse(content={"error": str(e)}, status_code=500)
+    
+    except:
+        electricalEnergyData=[]
+        try:
+            value = data.get('date')
+            clientName=""
+            if value and isinstance(value, str):
+                with db.cursor() as bmscur:
+                    ems_cur.execute(f"select energy,tenantname,polledtime from EMS.Clientscoolinghourlysum where date(polledtime)='${value}' AND tenantname IN ('${clientName}');")
+                    res = ems_cur.fetchall()
+            for i in res:
+                polledTime = str(i[2])[11:19]
+                if(i[0]==None):
+                    client_energy=0
+                else:
+                    client_energy=round(i[0],2)
+                electricalEnergyData.append({'polledTime':polledTime,"tenantname":i[1],"client_energy":client_energy})
+            return electricalEnergyData
+        except mysql.connector.Error as e:
+            print(e)
+            return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+@app.get('/ioe/CurrentVoltage')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
+    batteryList = []
+    try:
+        processed_db = get_awsdb()
+        ems_cur = processed_db.cursor()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    ems_cur.execute("""SELECT polledTime,st1_current,st2_current,st3_current,st4_current,st5_current,
+        st1_voltage,st2_voltage,st3_voltage,st4_voltage,st5_voltage,sum_of_current,avg_of_voltage FROM EMS.ioecurvol where date(polledTime) = curdate();""")
+    
+    res = ems_cur.fetchall()
+
+    for i in res:
+        polledTime = str(i[0])[11:16]
+        batteryList.append({"polledTime":polledTime,"current1":i[1],"current2":i[2],"current3":i[3],"current4":i[4],"current5":i[5],
+                            "voltage1":i[6],"voltage2":i[7],"voltage3":i[8],"voltage4":i[9],"voltage5":i[10],"totalCurrent":i[11],"avgVoltage":i[12]})
+        
+    return batteryList
 
 
-    electricalEnergyData=[]
+@app.post('/ioe/CurrentVoltage/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    batteryList = []
     try:
         value = data.get('date')
-        clientName=""
         if value and isinstance(value, str):
-            with db.cursor() as bmscur:
-                ems_cur.execute(f"select energy,tenantname,polledtime from EMS.Clientscoolinghourlysum where date(polledtime)='${value}' AND tenantname IN ('${clientName}');")
+            with db.cursor() as ems_cur:
+                ems_cur.execute(f"""SELECT polledTime,st1_current,st2_current,st3_current,st4_current,st5_current,
+                    st1_voltage,st2_voltage,st3_voltage,st4_voltage,st5_voltage,sum_of_current,avg_of_voltage FROM EMS.ioecurvol where date(polledTime) = '{value}';""")
+                
                 res = ems_cur.fetchall()
-        for i in res:
-            polledTime = str(i[2])[11:19]
-            if(i[0]==None):
-                client_energy=0
-            else:
-                client_energy=round(i[0],2)
-            electricalEnergyData.append({'polledTime':polledTime,"tenantname":i[1],"client_energy":client_energy})
-        return electricalEnergyData
+
+                for i in res:
+                    polledTime = str(i[0])[11:16]
+                    batteryList.append({"polledTime":polledTime,"current1":i[1],"current2":i[2],"current3":i[3],"current4":i[4],"current5":i[5],
+                                        "voltage1":i[6],"voltage2":i[7],"voltage3":i[8],"voltage4":i[9],"voltage5":i[10],"totalCurrent":i[11],"avgVoltage":i[12]})
+            return batteryList
     except mysql.connector.Error as e:
         print(e)
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
@@ -168,8 +305,6 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
     return batteryOperationData
 
 
-
-
 @app.post('/battery/Operations/Filtered')
 def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
     batteryOperationData=[]
@@ -180,27 +315,27 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
                 bmscur.execute(f"SELECT polledtime,peak_Demand,LTO_Power,IOE_Battery_Power,Demand_without_Peakshaving FROM EMS.Batteryoperation where date(polledtime) = '{value}'")
                 res = bmscur.fetchall()
 
-        for i in res:
-            polledTime = str(i[0])[11:19]
-            if(i[1]==None):
-                peak_Demand=0
-            else:
-                peak_Demand=round(i[1],2)
-            if(i[2]==None):
-                LTO_Power=0
-            else:
-                LTO_Power=round(i[2],2)
-            if(i[3]==None):
-                IOE_Battery_Power=0
-            else:
-                IOE_Battery_Power=round(i[3],2)
-            if(i[4]==None):
-                Demand_without_Peakshaving=0
-            else:
-                Demand_without_Peakshaving=round(i[4],2)
- 
-            batteryOperationData.append({'polledTime':polledTime,"peak_Demand":peak_Demand,"LTO_Power":LTO_Power,"IOE_Battery_Power":IOE_Battery_Power,"Demand_without_Peakshaving":Demand_without_Peakshaving})   
-        return batteryOperationData
+                for i in res:
+                    polledTime = str(i[0])[11:19]
+                    if(i[1]==None):
+                        peak_Demand=0
+                    else:
+                        peak_Demand=round(i[1],2)
+                    if(i[2]==None):
+                        LTO_Power=0
+                    else:
+                        LTO_Power=round(i[2],2)
+                    if(i[3]==None):
+                        IOE_Battery_Power=0
+                    else:
+                        IOE_Battery_Power=round(i[3],2)
+                    if(i[4]==None):
+                        Demand_without_Peakshaving=0
+                    else:
+                        Demand_without_Peakshaving=round(i[4],2)
+        
+                    batteryOperationData.append({'polledTime':polledTime,"peak_Demand":peak_Demand,"LTO_Power":LTO_Power,"IOE_Battery_Power":IOE_Battery_Power,"Demand_without_Peakshaving":Demand_without_Peakshaving})   
+                return batteryOperationData
     except mysql.connector.Error as e:
         print(e)
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
@@ -1466,13 +1601,13 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
     
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT polledTime,wheeled,grid FROM EMS.fiveMinData where date(polledTime) = curdate();")
+    bms_cur.execute("SELECT polledTime,wheeled,grid,wheeled2 FROM EMS.fiveMinData where date(polledTime) = curdate();")
 
     res = bms_cur.fetchall()
 
     for i in res:
         polledTime = str(i[0])[11:16]
-        min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2]})
+        min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2],'wheeledEnergy2':i[3]})
 
     return min_list
 
@@ -1485,13 +1620,13 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
 
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT polledTime,wheeled,grid FROM EMS.fiveMinData where date(polledTime) = '{value}'")
+                bmscur.execute(f"SELECT polledTime,wheeled,grid,wheeled2 FROM EMS.fiveMinData where date(polledTime) = '{value}'")
 
                 res = bmscur.fetchall()
 
                 for i in res:
                     polledTime = str(i[0])[11:16]
-                    min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2]})
+                    min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2],'wheeledEnergy2':i[3]})
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
