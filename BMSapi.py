@@ -718,6 +718,9 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
                                   sum(gridEnergy),
                                   sum(rooftopEnergy),
                                   sum(wheeledinEnergy),
+                                  sum(wheeledinEnergy2),
+                                  sum(windEnergy),
+                                  sum(diesel),
                                   max(peakDemand) 
                                   FROM EMS.buildingConsumption 
                                   where date(polledTime) = curdate();""")
@@ -725,8 +728,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     res = bms_cur.fetchall()
 
     for i in res:
-        building_list.append({'gridEnergy':i[1],'rooftopEnergy':i[2],
-                              'wheeledinEnergy':i[3],'peakDemand':i[4],'Diesel':0})
+        building_list.append({'gridEnergy':i[1],'rooftopEnergy':i[2],'wheeledinEnergy':i[3],'wheeledinEnergy2':i[4],
+                              'windEnergy':i[5],'peakDemand':i[7],'Diesel':i[6]})
     
     bms_cur.close()
     processed_db.close()
@@ -742,13 +745,14 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT date(polledTime),sum(gridEnergy),sum(rooftopEnergy),sum(wheeledinEnergy),max(peakDemand) FROM EMS.buildingConsumption where date(polledTime) = '{value}';")
+                bmscur.execute(f"""SELECT date(polledTime),sum(gridEnergy),sum(rooftopEnergy),sum(wheeledinEnergy),sum(wheeledinEnergy2),
+                                 sum(windEnergy),sum(diesel),max(peakDemand) FROM EMS.buildingConsumption where date(polledTime) = '{value}';""")
 
                 res = bmscur.fetchall()
 
                 for i in res:
-                    building_list.append({'gridEnergy':i[1],'rooftopEnergy':i[2],
-                              'wheeledinEnergy':i[3],'peakDemand':i[4],'Diesel':0})
+                    building_list.append({'gridEnergy':i[1],'rooftopEnergy':i[2],'wheeledinEnergy':i[3],'wheeledinEnergy2':i[4],
+                              'windEnergy':i[5],'peakDemand':i[7],'Diesel':i[6]})
     
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)

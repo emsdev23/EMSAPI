@@ -61,10 +61,10 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     TopTenClients_Response = []
     try:
         processed_db = get_meterdb()
+        bms_cur = processed_db.cursor()
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
    
-    bms_cur = processed_db.cursor()
 
     bms_cur.execute("SELECT ACRI,pfizer,SGRI,tatacommunications,ginger,axxlent,caterpillar,IFMR,NMS,TCS FROM meterdata.toptenclientsdaywise where date(timestamp)=curdate();")
    
@@ -223,70 +223,58 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
     
-    emscur = processed_db.cursor()
+    awscur = processed_db.cursor()
 
-    emscur.execute("""select ioeChgStart,ioeChgEnd,ioeDchgStart,ioeDchgEnd,ltoChgStart,ltoChgEnd,ltoDchgStart,ltoDchgEnd,
-                        upsChgStart,upsChgEnd,upsDchgStart,upsDchgEnd
-                        from EMS.batteryLastOpern order by recordId desc limit 1;""")
-                            
-    res = emscur.fetchall()
+    awscur.execute("SELECT ChgSt,ChgEd FROM EMS.ioeLastChg order by polledDate desc limit 1;")
+    ioeres1 = awscur.fetchall()
 
-    if res[0][0] != None:
-        dt = str(res[0][0])[0:10]
-        st = str(res[0][0])[11:16]
-        ed = str(res[0][1])[11:16]
+    for i in ioeres1:
+        ioechgst = i[0]
+        ioechged = i[1]
 
-        ioechg = dt+", "+st+" - "+ed
-    else:
-        ioechg = None
+    awscur.execute("SELECT DchgSt,DchgEd FROM EMS.ioeLastDchg order by polledDate desc limit 1;")
+    ioeres2 = awscur.fetchall()
 
-    if res[0][2] != None:
-        dt = str(res[0][2])[0:10]
-        st = str(res[0][2])[11:16]
-        ed = str(res[0][3])[11:16]
+    for i in ioeres2:
+        ioedchgst = i[0]
+        ioedchged = i[1]
 
-        ioedchg = dt+", "+st+" - "+ed
-    else:
-        ioedchg = None
+    awscur.execute("SELECT DchgSt,DchgEd FROM EMS.ltoLastDchg order by polledDate desc limit 1;")
+    ltores1 = awscur.fetchall()
 
-    if res[0][4] != None:
-        dt = str(res[0][4])[0:10]
-        st = str(res[0][4])[11:16]
-        ed = str(res[0][5])[11:16]
+    for i in ltores1:
+        ltodchgst = i[0]
+        ltodchged = i[1]
 
-        ltochg = dt+", "+st+" - "+ed
-    else:
-        ltochg = None
+    awscur.execute("SELECT ChgSt,ChgEd FROM EMS.ltoLastChg order by polledDate desc limit 1;")
+    ltores2 = awscur.fetchall()
 
-    if res[0][6] != None:
-        dt = str(res[0][6])[0:10]
-        st = str(res[0][6])[11:16]
-        ed = str(res[0][7])[11:16]
+    for i in ltores2:
+        ltochgst = i[0]
+        ltochged = i[1]
+    
+    awscur.execute("SELECT ChgSt,ChgEd FROM EMS.upsLastChg order by polledDate desc limit 1;")
+    upsres1 = awscur.fetchall()
 
-        ltodchg = dt+", "+st+" - "+ed
-    else:
-        ltodchg = None
+    for i in upsres1:
+        upschgst = i[0]
+        upschged = i[1]
+    
+    awscur.execute("SELECT DchgSt,DchgEd FROM EMS.upsLastDchg order by polledDate desc limit 1;")
+    upsres2 = awscur.fetchall()
 
-    if res[0][8] != None:
-        dt = str(res[0][8])[0:10]
-        st = str(res[0][8])[11:16]
-        ed = str(res[0][9])[11:16]
+    for i in upsres2:
+        upsdchgst = i[0]
+        upsdchged = i[1]
 
-        upschg = dt+", "+st+" - "+ed
-    else:
-        upschg = None
+    ioechg = str(ioechgst)[0:10]+', '+str(ioechgst)[11:16]+'-'+str(ioechged)[11:16]
+    ioedchg = str(ioedchgst)[0:10]+', '+str(ioedchgst)[11:16]+'-'+str(ioedchged)[11:16]
+    ltochg = str(ltochgst)[0:10]+', '+str(ltochgst)[11:16]+'-'+str(ltochged)[11:16]
+    ltodchg = str(ltodchgst)[0:10]+', '+str(ltodchgst)[11:16]+'-'+str(ltodchged)[11:16]
+    upschg = str(upschgst)[0:10]+', '+str(upschgst)[11:16]+'-'+str(upschged)[11:16]
+    upsdchg = str(upsdchgst)[0:10]+', '+str(upsdchgst)[11:16]+'-'+str(upsdchged)[11:16]
 
-    if res[0][10] != None:
-        dt = str(res[0][10])[0:10]
-        st = str(res[0][11])[11:16]
-        ed = str(res[0][11])[11:16]
-
-        upsdchg = dt+", "+st+" - "+ed
-    else:
-        upsdchg = None
-
-    if len(res) > 0:
-        operationLi.append({'ioeChg':ioechg,
+    operationLi.append({'ioeChg':ioechg,
                             'ioeDchg':ioedchg,
                             'ltoChg':ltochg,
                             'ltoDchg':ltodchg,
@@ -411,17 +399,31 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
         for i in res:
             if i[1] == None and i[2] == None and i[3] == None and i[4] == None and i[5] == None and i[6] == None and i[7] == None and i[8] == None and i[9] == None and i[10] == None:
                 polledTime = str(i[0])[11:16]
+                pli = [i[11],i[12],i[13],i[14],i[15]]
+                pli = [item for item in pli if item is not None]
+                pack = round(sum(pli)/len(pli))
                 ioe_list.append({"polledTime":polledTime,"chg1":0,"chg2":0,"chg3":0,"chg4":0,"chg5":0,
                                  "dchg1":0,"dchg2":0,"dchg3":0,"dchg4":0,"dchg5":0,"idle":0.1,
                                  "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
-                                 "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+                                 "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]
+                                 ,"totalChg":0,"totalDchg":0,"totalIdle":0.1,'totalPack':pack})
                 
             else:
                 polledTime = str(i[0])[11:16]
+                chgli = [i[1],i[2],i[3],i[4],i[5]]
+                chgli = [item for item in chgli if item is not None]
+                totalChg = round(sum(chgli),2)
+                dchgli = [i[6],i[7],i[8],i[9],i[10]]
+                dchgli = [item for item in dchgli if item is not None]
+                totalDchg = round(sum(dchgli),2)
+                pli = [i[11],i[12],i[13],i[14],i[15]]
+                pli = [item for item in pli if item is not None]
+                pack = round(sum(pli)/len(pli))
                 ioe_list.append({"polledTime":polledTime,"chg1":i[1],"chg2":i[2],"chg3":i[3],"chg4":i[4],"chg5":i[5],
                                  "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
                                  "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
-                                 "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+                                 "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]
+                                 ,"totalChg":totalChg,"totalDchg":totalDchg,"totalIdle":0.1,'totalPack':pack})
 
     return ioe_list
 
@@ -447,17 +449,31 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                             for i in res:
                                 if i[1] == None and i[2] == None and i[3] == None and i[4] == None and i[5] == None and i[6] == None and i[7] == None and i[8] == None and i[9] == None and i[10] == None:
                                     polledTime = str(i[0])[11:16]
+                                    pli = [i[11],i[12],i[13],i[14],i[15]]
+                                    pli = [item for item in pli if item is not None]
+                                    pack = round(sum(pli)/len(pli))
                                     ioe_list.append({"polledTime":polledTime,"chg1":0,"chg2":0,"chg3":0,"chg4":0,"chg5":0,
                                                     "dchg1":0,"dchg2":0,"dchg3":0,"dchg4":0,"dchg5":0,"idle":0.1,
                                                     "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
-                                                    "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+                                                    "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20],
+                                                    "totalChg":0,"totalDchg":0,"totalIdle":0.1,'totalPack':pack})
                                     
                                 else:
                                     polledTime = str(i[0])[11:16]
+                                    chgli = [i[1],i[2],i[3],i[4],i[5]]
+                                    chgli = [item for item in chgli if item is not None]
+                                    totalChg = round(sum(chgli),2)
+                                    dchgli = [i[6],i[7],i[8],i[9],i[10]]
+                                    dchgli = [item for item in dchgli if item is not None]
+                                    totalDchg = round(sum(dchgli),2)
+                                    pli = [i[11],i[12],i[13],i[14],i[15]]
+                                    pli = [item for item in pli if item is not None]
+                                    pack = round(sum(pli)/len(pli))
                                     ioe_list.append({"polledTime":polledTime,"chg1":i[1],"chg2":i[2],"chg3":i[3],"chg4":i[4],"chg5":i[5],
                                                     "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
                                                     "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
-                                                    "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]})
+                                                    "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]
+                                                    ,"totalChg":totalChg,"totalDchg":totalDchg,"totalIdle":0.1,'totalPack':pack})
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
@@ -928,13 +944,13 @@ from EMS.buidingConsumptionDayWise where polledDate <= curdate() and polledDate 
         print(ex)
         curmRE = 0
     
-    Roofm = (roof / (roof+wheeled+wheeled2+wind))*100
+    Roofm = (roof / (roof+wheeled+wheeled2+windm))*100
 
-    Wheeledm = (wheeled / (roof+wheeled+wheeled2+wind))*100
+    Wheeledm = (wheeled / (roof+wheeled+wheeled2+windm))*100
 
-    Wheeledm2 = (wheeled2 / (roof+wheeled+wheeled2+wind))*100
+    Wheeledm2 = (wheeled2 / (roof+wheeled+wheeled2+windm))*100
 
-    Windm = (windm / (roof+wheeled+wheeled2+wind))*100
+    Windm = (windm / (roof+wheeled+wheeled2+windm))*100
 
     emscur.execute("""select polledDate,sum(gridEnergy),sum(wheeledinEnergy),sum(rooftopEnergy),sum(deisel),sum(wheeledinEnergy2),sum(windEnergy) 
                 from EMS.buidingConsumptionDayWise where polledDate <= date_sub(curdate(),interval 30 day) and polledDate >= date_sub(curdate(),interval 59 day);""")
@@ -1034,6 +1050,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
             diesel = 0
     else:
         diesel = 0
+
+    diesel = float(diesel)
 
     bms_cur.execute("SELECT avgpowerfactor,minpowerfactor FROM EMS.schneider7230processed where date(polledTime) = curdate() order by polledTime desc limit 1;")
     

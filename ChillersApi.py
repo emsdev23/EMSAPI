@@ -55,6 +55,323 @@ def get_meterdb():
     return db
 
 
+@app.get('/chillerDashboard/thermalQuater')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
+    EnergyData = []
+    try:
+        processed_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    ems_cur = processed_db.cursor()
+
+    ems_cur.execute("SELECT polledTime,coolingEnergy,ChargingEnergy FROM EMS.ThermalQuarter where date(polledTime) = curdate();")
+    res = ems_cur.fetchall()
+
+    for i in res:
+        polledTime = str(i)[11:16]
+        EnergyData.append({'TimeStamp':polledTime,'coolingEnergy':i[1],'ChargingEnergy':i[2]})
+
+    return EnergyData
+
+@app.post('/chillerDashboard/thermalQuater/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    EnergyData = []
+    try:
+        value = data.get('date')
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT polledTime,coolingEnergy,ChargingEnergy FROM EMS.ThermalQuarter where date(polledTime) = '{value}';")
+                res = bmscur.fetchall()
+
+                for i in res:
+                    polledTime = str(i[0])[11:16]
+                    EnergyData.append({'TimeStamp':polledTime,'coolingEnergy':i[1],'ChargingEnergy':i[2]})
+
+        return EnergyData 
+    
+    except mysql.connector.Error as e:
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+
+@app.get('/chillerDashboard/electricalEnergy/phasewise')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
+
+    electricalEnergyData=[]
+    electric_dict = {}
+    try:
+        processed_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    ems_cur = processed_db.cursor()
+
+    ems_cur.execute("""SELECT sum(chiller1),sum(chiller2),sum(chiller3),sum(chiller4),
+                    sum(primarypump1),sum(primarypump2),sum(primarypump3),sum(primarypump4),sum(primarypump5),
+                    sum(secondarypump1),sum(secondarypump2),sum(secondarypump3),sum(secondarypump4),sum(secondarypump5),
+                    sum(condenser1),sum(condenser2),sum(condenser3),sum(condenser4),sum(condenser5),
+                    sum(cooolingtower1),sum(cooolingtower2),sum(cooolingtower3),sum(cooolingtower4),sum(cooolingtower5),
+                    sum(cooolingtower6),sum(cooolingtower7),sum(cooolingtower8),sum(cooolingtower9),sum(cooolingtower10)
+                    FROM EMS.ElectricalEnergyph2 where date(polledTime) = curdate();""")
+    
+    res1 = ems_cur.fetchall()
+
+    for i in res1:
+        electric_dict['chiller1ph2']=i[0]
+        electric_dict['chiller2ph2']=i[1]
+        electric_dict['chiller3ph2']=i[2]
+        electric_dict['chiller4ph2']=i[3]
+        electric_dict['primarypump1ph2']=i[4]
+        electric_dict['primarypump2ph2']=i[5]
+        electric_dict['primarypump3ph2']=i[6]
+        electric_dict['primarypump4ph2']=i[7]
+        electric_dict['primarypump5ph2']=i[8]
+        electric_dict['secondarypump1ph2']=i[9]
+        electric_dict['secondarypump2ph2']=i[10]
+        electric_dict['secondarypump3ph2']=i[11]
+        electric_dict['secondarypump4ph2']=i[12]
+        electric_dict['secondarypump4ph2']=i[13]
+        electric_dict['condenser1ph2']=i[14]
+        electric_dict['condenser2ph2']=i[15]
+        electric_dict['condenser3ph2']=i[16]
+        electric_dict['condenser4ph2']=i[17]
+        electric_dict['condenser5ph2']=i[18]
+        electric_dict['cooolingtower1ph2']=i[19]
+        electric_dict['cooolingtower2ph2']=i[20]
+        electric_dict['cooolingtower3ph2']=i[21]
+        electric_dict['cooolingtower4ph2']=i[22]
+        electric_dict['cooolingtower5ph2']=i[23]
+        electric_dict['cooolingtower6ph2']=i[24]
+        electric_dict['cooolingtower7ph2']=i[25]
+        electric_dict['cooolingtower8ph2']=i[26]
+        electric_dict['cooolingtower9ph2']=i[27]
+        electric_dict['cooolingtower10ph2']=i[28]
+    
+
+    ems_cur.execute("""SELECT sum(chiller5), sum(chiller6), sum(chiller7), sum(chiller8),
+                    sum(primarypump1), sum(primarypump2), sum(primarypump3), sum(primarypump4),
+                    sum(primarypump5), sum(secondarypump), sum(condenser1), sum(condenser2),
+                    sum(condenser3), sum(condenser4), sum(cooolingtower)
+                    FROM EMS.ElectricalEnergyph1 where date(polledTime) = curdate();""")
+    
+    res2 = ems_cur.fetchall()
+
+    for i in res2:
+        electric_dict['chiller5ph1']=i[0]
+        electric_dict['chiller6ph1']=i[1]
+        electric_dict['chiller7ph1']=i[2]
+        electric_dict['chiller8ph1']=i[3]
+        electric_dict['primarypump1ph1']=i[4]
+        electric_dict['primarypump2ph1']=i[5]
+        electric_dict['primarypump3ph1']=i[6]
+        electric_dict['primarypump4ph1']=i[7]
+        electric_dict['primarypump5ph1']=i[8]
+        electric_dict['secondarypumpph1']=i[9]
+        electric_dict['condenser1ph1']=i[10]
+        electric_dict['condenser2ph1']=i[11]
+        electric_dict['condenser3ph1']=i[12]
+        electric_dict['condenser4ph1']=i[13]
+        electric_dict['cooolingtowerph1']=i[14]
+
+    electricalEnergyData.append(electric_dict)
+
+    return electricalEnergyData
+
+
+@app.post('/chillerDashboard/electricalEnergy/phasewise/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+
+    electricalEnergyData=[]
+    electric_dict = {}
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"""SELECT sum(chiller1),sum(chiller2),sum(chiller3),sum(chiller4),
+                    sum(primarypump1),sum(primarypump2),sum(primarypump3),sum(primarypump4),sum(primarypump5),
+                    sum(secondarypump1),sum(secondarypump2),sum(secondarypump3),sum(secondarypump4),sum(secondarypump5),
+                    sum(condenser1),sum(condenser2),sum(condenser3),sum(condenser4),sum(condenser5),
+                    sum(cooolingtower1),sum(cooolingtower2),sum(cooolingtower3),sum(cooolingtower4),sum(cooolingtower5),
+                    sum(cooolingtower6),sum(cooolingtower7),sum(cooolingtower8),sum(cooolingtower9),sum(cooolingtower10)
+                    FROM EMS.ElectricalEnergyph2 where date(polledTime) = '{value}'""")
+                
+                res1 = bmscur.fetchall()
+
+                for i in res1:
+                    electric_dict['chiller1ph2']=i[0]
+                    electric_dict['chiller2ph2']=i[1]
+                    electric_dict['chiller3ph2']=i[2]
+                    electric_dict['chiller4ph2']=i[3]
+                    electric_dict['primarypump1ph2']=i[4]
+                    electric_dict['primarypump2ph2']=i[5]
+                    electric_dict['primarypump3ph2']=i[6]
+                    electric_dict['primarypump4ph2']=i[7]
+                    electric_dict['primarypump5ph2']=i[8]
+                    electric_dict['secondarypump1ph2']=i[9]
+                    electric_dict['secondarypump2ph2']=i[10]
+                    electric_dict['secondarypump3ph2']=i[11]
+                    electric_dict['secondarypump4ph2']=i[12]
+                    electric_dict['secondarypump4ph2']=i[13]
+                    electric_dict['condenser1ph2']=i[14]
+                    electric_dict['condenser2ph2']=i[15]
+                    electric_dict['condenser3ph2']=i[16]
+                    electric_dict['condenser4ph2']=i[17]
+                    electric_dict['condenser5ph2']=i[18]
+                    electric_dict['cooolingtower1ph2']=i[19]
+                    electric_dict['cooolingtower2ph2']=i[20]
+                    electric_dict['cooolingtower3ph2']=i[21]
+                    electric_dict['cooolingtower4ph2']=i[22]
+                    electric_dict['cooolingtower5ph2']=i[23]
+                    electric_dict['cooolingtower6ph2']=i[24]
+                    electric_dict['cooolingtower7ph2']=i[25]
+                    electric_dict['cooolingtower8ph2']=i[26]
+                    electric_dict['cooolingtower9ph2']=i[27]
+                    electric_dict['cooolingtower10ph2']=i[28]
+
+                bmscur.execute(f"""SELECT sum(chiller5), sum(chiller6), sum(chiller7), sum(chiller8),
+                    sum(primarypump1), sum(primarypump2), sum(primarypump3), sum(primarypump4),
+                    sum(primarypump5), sum(secondarypump), sum(condenser1), sum(condenser2),
+                    sum(condenser3), sum(condenser4), sum(cooolingtower)
+                    FROM EMS.ElectricalEnergyph1 where date(polledTime) = '{value}';""")
+    
+                res2 = bmscur.fetchall()
+
+                for i in res2:
+                    electric_dict['chiller5ph1']=i[0]
+                    electric_dict['chiller6ph1']=i[1]
+                    electric_dict['chiller7ph1']=i[2]
+                    electric_dict['chiller8ph1']=i[3]
+                    electric_dict['primarypump1ph1']=i[4]
+                    electric_dict['primarypump2ph1']=i[5]
+                    electric_dict['primarypump3ph1']=i[6]
+                    electric_dict['primarypump4ph1']=i[7]
+                    electric_dict['primarypump5ph1']=i[8]
+                    electric_dict['secondarypumpph1']=i[9]
+                    electric_dict['condenser1ph1']=i[10]
+                    electric_dict['condenser2ph1']=i[11]
+                    electric_dict['condenser3ph1']=i[12]
+                    electric_dict['condenser4ph1']=i[13]
+                    electric_dict['cooolingtowerph1']=i[14]
+
+            electricalEnergyData.append(electric_dict)
+
+            return electricalEnergyData 
+    
+    except mysql.connector.Error as e:
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+
+@app.get('/chillerDashboard/electricalEnergy')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
+
+    electricalEnergyData=[]
+    try:
+        processed_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    ems_cur = processed_db.cursor()
+
+    ems_cur.execute("SELECT sum(Total_ElectricalEnergy) as Total_ElectricalEnergy ,sum(chiller_ElectricalEnergy) as chiller_ElectricalEnergy ,sum(Primarypump_ElecticalEnergy) as Primarypump_ElecticalEnergy,sum(Secondarypump_ElectricalEnergy) as Secondarypump_ElectricalEnergy ,sum(Condenserpump_ElectricalEnergy) as Condenserpump_ElectricalEnergy,sum(Coolingtower) as Coolingtower FROM EMS.ElectricalEnergy where date(polledTime)=curdate();")
+   
+    res = ems_cur.fetchall()
+
+    # print(res)
+
+    for i in res:
+        #polledTime = str(i[1])[11:19]
+        if(i[0]==None):
+            Total_ElectricalEnergy=0
+        else:
+            Total_ElectricalEnergy=round(i[0],2)
+        if(i[1]==None):
+            chiller_ElectricalEnergy=0
+        else:
+            chiller_ElectricalEnergy=round(i[1],2)
+
+        if(i[2]==None):
+            Primarypump_ElecticalEnergy=0
+        else:
+            Primarypump_ElecticalEnergy=round(i[2],2)
+
+        if(i[3]==None):
+            Secondarypump_ElectricalEnergy=0
+        else:
+            Secondarypump_ElectricalEnergy=round(i[3],2)
+        if(i[4]==None):
+            Condenserpump_ElectricalEnergy=0
+        else:
+            Condenserpump_ElectricalEnergy=round(i[4],2)
+        if(i[5]==None):
+            Coolingtower=0
+        else:
+            Coolingtower=round(i[5],2)
+
+        electricalEnergyData.append({'Total_ElectricalEnergy':Total_ElectricalEnergy,"chiller_ElectricalEnergy":chiller_ElectricalEnergy,"Primarypump_ElecticalEnergy":Primarypump_ElecticalEnergy,"Secondarypump_ElectricalEnergy":Secondarypump_ElectricalEnergy,"Condenserpump_ElectricalEnergy":Condenserpump_ElectricalEnergy,"Coolingtower":Coolingtower})
+    
+    return electricalEnergyData
+
+
+
+
+@app.post('/chillerDashboard/electricalEnergy/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+
+    electricalEnergyData=[]
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT sum(Total_ElectricalEnergy) as Total_ElectricalEnergy ,sum(chiller_ElectricalEnergy) as chiller_ElectricalEnergy ,sum(Primarypump_ElecticalEnergy) as Primarypump_ElecticalEnergy,sum(Secondarypump_ElectricalEnergy) as Secondarypump_ElectricalEnergy ,sum(Condenserpump_ElectricalEnergy) as Condenserpump_ElectricalEnergy,sum(Coolingtower) as Coolingtower FROM EMS.ElectricalEnergy where date(polledTime) = '{value}'")
+
+                res = bmscur.fetchall()
+
+        for i in res:
+            if(i[0]==None):
+                Total_ElectricalEnergy=0
+            else:
+                Total_ElectricalEnergy=round(i[0],2)
+            if(i[1]==None):
+                chiller_ElectricalEnergy=0
+            else:
+                chiller_ElectricalEnergy=round(i[1],2)
+
+            if(i[2]==None):
+                Primarypump_ElecticalEnergy=0
+            else:
+                Primarypump_ElecticalEnergy=round(i[2],2)
+
+            if(i[3]==None):
+                Secondarypump_ElectricalEnergy=0
+            else:
+                Secondarypump_ElectricalEnergy=round(i[3],2)
+            if(i[4]==None):
+                Condenserpump_ElectricalEnergy=0
+            else:
+                Condenserpump_ElectricalEnergy=round(i[4],2)
+            if(i[5]==None):
+                Coolingtower=0
+            else:
+                Coolingtower=round(i[5],2)
+
+            electricalEnergyData.append({'Total_ElectricalEnergy':Total_ElectricalEnergy,"chiller_ElectricalEnergy":chiller_ElectricalEnergy,"Primarypump_ElecticalEnergy":Primarypump_ElecticalEnergy,"Secondarypump_ElectricalEnergy":Secondarypump_ElectricalEnergy,"Condenserpump_ElectricalEnergy":Condenserpump_ElectricalEnergy,"Coolingtower":Coolingtower})
+                
+        
+        return electricalEnergyData
+    except mysql.connector.Error as e:
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+
+
+
+
 @app.get('/chillerDashboard/CTloadvscop')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     ctcop_list = []
@@ -790,11 +1107,9 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
    
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT  c5cop,c6cop,c7cop,c8cop,timestamp FROM meterdata.chillarcopphase15678 where date(timestamp)=curdate();")
+    bms_cur.execute("SELECT  c5cop,c6cop,c7cop,c8cop,timestamp FROM meterdata.chillarcopphaseone5678 where date(timestamp)=curdate();;")
    
     res = bms_cur.fetchall()
-
-    # print(res)
 
     for i in res:
         Phase1polledTime = str(i[4])[11:16]

@@ -214,11 +214,25 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
                             entry['ioe'] = battery['ioe']  
 
                 for entry in hourlyLi:
-                    entry['battery'] = round(entry['ioe'] + entry['UPS'] + entry['lto'],1)
-                    del entry['ioe']
-                    del entry['UPS']
-                    del entry['lto']
+                    try:
+                        ioe = entry['ioe']
+                        del entry['ioe']
+                    except Exception as ex:
+                        ioe = 0
 
+                    try:
+                        lto = entry['lto']
+                        del entry['lto']
+                    except Exception as ex:
+                        lto = 0
+
+                    try:
+                        ups = entry['ups']
+                        del entry['ups']
+                    except Exception as ex:
+                        ups = 0
+
+                    entry['battery'] = round(ioe+lto+ups,1)
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
@@ -374,10 +388,25 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
                 entry['ioe'] = battery['ioe']  
 
     for entry in hourlyLi:
-        entry['battery'] = round(entry['ioe'] + entry['UPS'] + entry['lto'],1)
-        del entry['ioe']
-        del entry['UPS']
-        del entry['lto']
+        try:
+            ioe = entry['ioe']
+            del entry['ioe']
+        except Exception as ex:
+            ioe = 0
+
+        try:
+            lto = entry['lto']
+            del entry['lto']
+        except Exception as ex:
+            lto = 0
+
+        try:
+            ups = entry['ups']
+            del entry['ups']
+        except Exception as ex:
+            ups = 0
+
+        entry['battery'] = round(ioe+lto+ups,1)
 
     return hourlyLi
 

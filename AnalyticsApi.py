@@ -1601,13 +1601,13 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
     
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT polledTime,wheeled,grid,wheeled2 FROM EMS.fiveMinData where date(polledTime) = curdate();")
+    bms_cur.execute("SELECT polledTime,wheeled,grid,wheeled2,wind FROM EMS.fiveMinData where date(polledTime) = curdate();")
 
     res = bms_cur.fetchall()
 
     for i in res:
         polledTime = str(i[0])[11:16]
-        min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2],'wheeledEnergy2':i[3]})
+        min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2],'wheeledEnergy2':i[3],'windEnergy':i[4]})
 
     return min_list
 
@@ -1620,13 +1620,13 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
 
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT polledTime,wheeled,grid,wheeled2 FROM EMS.fiveMinData where date(polledTime) = '{value}'")
+                bmscur.execute(f"SELECT polledTime,wheeled,grid,wheeled2,wind FROM EMS.fiveMinData where date(polledTime) = '{value}'")
 
                 res = bmscur.fetchall()
 
                 for i in res:
                     polledTime = str(i[0])[11:16]
-                    min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2],'wheeledEnergy2':i[3]})
+                    min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2],'wheeledEnergy2':i[3],'windEnergy':i[4]})
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
