@@ -66,68 +66,13 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
    
 
-    bms_cur.execute("SELECT ACRI,pfizer,SGRI,tatacommunications,ginger,axxlent,caterpillar,IFMR,NMS,TCS FROM meterdata.toptenclientsdaywise where date(timestamp)=curdate();")
+    bms_cur.execute("""SELECT tenantname, round(SUM(Energy)) AS TotalEnergy FROM EMS.Clientshourlysum
+                        WHERE DATE(polledTime) = CURDATE() GROUP BY tenantname
+                        order by TotalEnergy desc limit 4;""")
    
     res = bms_cur.fetchall()
 
-    if res[0][0] != None:
-        arci = round(res[0][0]) 
-    else:
-        arci = 0
-
-    if res[0][1] != None:
-        pfizer = round(res[0][1]) 
-    else:
-        pfizer = 0
-
-    if res[0][2] != None:
-        SGRI = round(res[0][2]) 
-    else:
-        SGRI = 0
-
-    if res[0][3] != None:
-        tatacommunications = round(res[0][3]) 
-    else:
-        tatacommunications = 0
-
-    if res[0][4] != None:
-        ginger = round(res[0][4]) 
-    else:
-        ginger = 0
-    
-    if res[0][5] != None:
-        axxlent = round(res[0][5]) 
-    else:
-        axxlent = 0
-    
-    if res[0][6] != None:
-        caterpillar = round(res[0][6]) 
-    else:
-        caterpillar = 0
-
-    if res[0][7] != None:
-        IFMR = round(res[0][7]) 
-    else:
-        IFMR = 0
-    
-    if res[0][8] != None:
-        NMS = round(res[0][8]) 
-    else:
-        NMS = 0
-    
-    if res[0][9] != None:
-        TCS = round(res[0][9]) 
-    else:
-        TCS = 0
-
-
-    EnergyDict = {'ARCI':arci,'Pfizer':pfizer,'SGRI':SGRI,'Tata Communications':tatacommunications,'Ginger':ginger,
-                                   'Axxlent':axxlent,'Caterpillar':caterpillar,'IFMR':IFMR,
-                                   'NMS':NMS,'TCS':TCS}
-    
-    top_four = sorted(EnergyDict.items(), key=lambda item: item[1], reverse=True)[:4]
-
-    for i in top_four:
+    for i in res:
         TopTenClients_Response.append({'CompanyName':i[0],'Energy':i[1]})
 
     bms_cur.close()
@@ -145,69 +90,14 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
 
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT ACRI,pfizer,SGRI,tatacommunications,ginger,axxlent,caterpillar,IFMR,NMS,TCS FROM meterdata.toptenclientsdaywise where date(timestamp) = '{value}'")
-
+                bmscur.execute(f"""SELECT tenantname, round(SUM(Energy)) AS TotalEnergy FROM EMS.Clientshourlysum
+                        WHERE DATE(polledTime) = '{value}' GROUP BY tenantname
+                        order by TotalEnergy desc limit 4;""")
+   
                 res = bmscur.fetchall()
-                print(res)
 
-                if res[0][0] != None:
-                    arci = round(res[0][0]) 
-                else:
-                    arci = 0
-
-                if res[0][1] != None:
-                    pfizer = round(res[0][1]) 
-                else:
-                    pfizer = 0
-
-                if res[0][2] != None:
-                    SGRI = round(res[0][2]) 
-                else:
-                    SGRI = 0
-
-                if res[0][3] != None:
-                    tatacommunications = round(res[0][3]) 
-                else:
-                    tatacommunications = 0
-
-                if res[0][4] != None:
-                    ginger = round(res[0][4]) 
-                else:
-                    ginger = 0
-                
-                if res[0][5] != None:
-                    axxlent = round(res[0][5]) 
-                else:
-                    axxlent = 0
-                
-                if res[0][6] != None:
-                    caterpillar = round(res[0][6]) 
-                else:
-                    caterpillar = 0
-
-                if res[0][7] != None:
-                    IFMR = round(res[0][7]) 
-                else:
-                    IFMR = 0
-                
-                if res[0][8] != None:
-                    NMS = round(res[0][8]) 
-                else:
-                    NMS = 0
-                
-                if res[0][9] != None:
-                    TCS = round(res[0][9]) 
-                else:
-                    TCS = 0
-
-                EnergyDict = {'ARCI':arci,'Pfizer':pfizer,'SGRI':SGRI,'Tata Communications':tatacommunications,'Ginger':ginger,
-                                   'Axxlent':axxlent,'Caterpillar':caterpillar,'IFMR':IFMR,
-                                   'NMS':NMS,'TCS':TCS}
-                
-                top_four = sorted(EnergyDict.items(), key=lambda item: item[1], reverse=True)[:4]
-                
-                for i in top_four:
-                    TopTenClients_Response.append({'CompanyName':i[0],'Energy':i[1]}) 
+                for i in res:
+                    TopTenClients_Response.append({'CompanyName':i[0],'Energy':i[1]})
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)

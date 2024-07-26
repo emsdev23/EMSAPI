@@ -74,8 +74,76 @@ def process_energy_data(data):
 
     return result
 
+@app.get('/wind/monthTotalEnergy')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
+    windEnergy = []
+
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    awscur = aws_db.cursor()
+
+    awscur.execute("SELECT polledTime,round(sum(Energy),2) FROM EMS.windHourly where month(polledTime) = month(curdate());")
+
+    res = awscur.fetchall()
+
+    for i in res:
+        windEnergy.append({"windEnergy":i[1]})
+    
+    return windEnergy
+
+@app.get('/wind/totalEnergy')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
+    windEnergy = []
+    energy = 0
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    awscur = aws_db.cursor()
+
+    awscur.execute("SELECT polledTime,Energy FROM EMS.windHourly where date(polledTime) = curdate();")
+
+    res = awscur.fetchall()
+
+    for i in res:
+        if i[1] != None:
+            energy += i[1]
+    if energy != 0:
+        plf = round((energy/(24*2000))*100,2)
+    windEnergy.append({"Energy":energy,"PLF":plf})
+
+    return windEnergy
 
 
+@app.post('/wind/totalEnergy/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    windEnergy = []
+    energy = 0
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as awscur:
+                awscur.execute(f"SELECT polledTime,Energy FROM EMS.windHourly where date(polledTime) = '{value}';")
+
+                res = awscur.fetchall()
+
+                for i in res:
+                    if i[1] != None:
+                        energy += i[1]
+                if energy != 0:
+                    plf = (energy/(24*2000))*100    
+                windEnergy.append({"Energy":energy,"PLF":plf})
+        
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+
+    return windEnergy
+    
 @app.post('/Analysis/TopElectricClients/search')
 async def peak_demand_date(request: Request, db: mysql.connector.connect = Depends(get_awsdb)):
     electricalEnergyData = []
