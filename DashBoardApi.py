@@ -34,7 +34,6 @@ def get_emsdb():
     )
     return db
 
-
 def get_meterdb():
     db = mysql.connector.connect(
         host=data['awsDB']['host'],
@@ -929,7 +928,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     if grid < 0 :
         grid = 0
 
-    bms_cur.execute("SELECT round(total_energy_difference) FROM meterdata.diselenergy where date(polled_time) = curdate() order by polled_time desc limit 1;")
+    bms_cur.execute("SELECT round(sum(Energy)) FROM EMS.DGHourly where date(polledTime) = curdate();")
 
     diselres = bms_cur.fetchall()
 
@@ -1143,14 +1142,40 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     bms_cur.execute("select sum(energy) from EMS.roofTopHour where date(polledTime) = curdate();")
     
     res = bms_cur.fetchall()
-    rooftop = res[0][0]
+    
+    if res[0][0] != None:
+        rooftop = res[0][0]
+    else:
+        rooftop = 0
 
     bms_cur.execute("SELECT sum(Energy) FROM EMS.WheeledHourly where date(polledTime) = curdate();")
 
     res1 = bms_cur.fetchall()
-    wheeled = res1[0][0]
 
-    co2 = [{'co2reduced':round(((rooftop+wheeled)/1000)*0.71,2)}]
+    bms_cur.execute("SELECT sum(Energy) FROM EMS.WheeledHourlyph2 where date(polledTime) = curdate();")
+
+    res2 = bms_cur.fetchall()
+
+    bms_cur.execute("SELECT sum(Energy) FROM EMS.windHourly where date(polledTime) = curdate();")
+
+    res3 = bms_cur.fetchall()
+
+    if res1[0][0] != None:
+        wheeled = res1[0][0]
+    else:
+        wheeled = 0
+
+    if res2[0][0] != None:
+        wheeled2 = res2[0][0]
+    else:
+        wheeled2 = 0
+    
+    if res3[0][0] != None:
+        wind = res3[0][0]
+    else:
+        wind = 0
+
+    co2 = [{'co2reduced':round(((rooftop+wheeled+wheeled2+wind)/1000)*0.71,2)}]
 
     bms_cur.close()
     processed_db.close()
@@ -1398,7 +1423,6 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
     return lto_list
 
 
-#Evcharger api
 @app.get("/dashboard/EvCharger")
 def ev_charger_dashboard(db: mysql.connector.connect = Depends(get_emsdb)):
     EVCharger_list = []
@@ -1407,7 +1431,7 @@ def ev_charger_dashboard(db: mysql.connector.connect = Depends(get_emsdb)):
         processed_db = get_emsdb()
         charger_cur = processed_db.cursor()
 
-        charger_cur.execute("SELECT chargpointname,energyconsumption,totalsessions FROM evcharger WHERE DATE(servertime) = CURDATE();")
+        charger_cur.execute("SELECT chargpointname,energyconsumption,totalsessions FROM EMS.evcharger WHERE DATE(servertime) = CURDATE();")
         result = charger_cur.fetchall()
 
         # Close the database connection
@@ -1522,6 +1546,132 @@ def ev_charger_dashboard(db: mysql.connector.connect = Depends(get_emsdb)):
     except Exception as e:
         # Handle exceptions and return an HTTP 500 response
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+
+@app.post("/dashboard/EvCharger/filtered")
+def ev_charger_dashboard(data:dict,db: mysql.connector.connect = Depends(get_emsdb)):
+    EVCharger_list = []
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                processed_db = get_emsdb()
+                charger_cur = processed_db.cursor()
+
+                charger_cur.execute(f"SELECT chargpointname,energyconsumption,totalsessions FROM EMS.evcharger WHERE DATE(servertime) = '{value}'")
+                result = charger_cur.fetchall()
+
+                # Initialize variables
+                NoOfChargers = 0
+                CP1_1Status = ""
+                LEV4_1Status = ""
+                CP11_1Status = ""
+                CP12_1Status = ""
+                CP13_1Status = ""
+                CP14_1Status = ""
+
+                # Initialize dictionaries for each charger
+                CP1_1 = {'CP1_1Energy': 0, 'CP1_1TotalSession': 0, 'CP1_1NoOf_chargers': 0}
+                LEV4_1 = {'LEV4_1Energy': 0, 'LEV4_1TotalSession': 0, 'LEV4_NoOf_chargers': 0}
+                CP11_1 = {'CP11_1Energy': 0, 'CP11_1TotalSession': 0, 'CP11_1NoOf_chargers': 0}
+                CP12_1 = {'CP12_1Energy': 0, 'CP12_1TotalSession': 0, 'CP12_1NoOf_chargers': 0}
+                CP13_1 = {'CP13_1Energy': 0, 'CP13_1TotalSession': 0, 'CP13_1NoOf_chargers': 0}
+                CP14_1 = {'CP14_1Energy': 0, 'CP14_1TotalSession': 0, 'CP14_1NoOf_chargers': 0}
+
+                # Process the result and update dictionaries
+                for entry in result:
+                    charger_name = entry[0]
+                    energy_consumption = float(entry[1])
+
+                    if charger_name == 'CP1_1':
+                        CP1_1['CP1_1Energy'] += energy_consumption
+                        CP1_1['CP1_1TotalSession'] = entry[2]
+                        if energy_consumption > 0:
+                            CP1_1['CP1_1NoOf_chargers'] = 'Active'
+                            CP1_1Status = 'active'
+                            NoOfChargers += 1
+
+                    if charger_name == 'LEV4_1':
+                        LEV4_1['LEV4_1Energy'] += energy_consumption
+                        LEV4_1['LEV4_1TotalSession'] = entry[2]
+                        if energy_consumption > 0:
+                            LEV4_1['LEV4_1NoOf_chargers'] = 'Active'
+                            LEV4_1Status = 'active'
+                            NoOfChargers += 1
+
+                    if charger_name == 'CP11_1':
+                        CP11_1['CP11_1Energy'] += energy_consumption
+                        CP11_1['CP11_1TotalSession'] = entry[2]
+                        if energy_consumption > 0:
+                            CP11_1['CP11_1NoOf_chargers'] = 'Active'
+                            CP11_1Status = 'active'
+                            NoOfChargers += 1
+                    
+                    if charger_name == 'CP12_1':
+                        CP12_1['CP12_1Energy'] += energy_consumption
+                        CP12_1['CP12_1TotalSession'] = entry[2]
+                        if energy_consumption > 0:
+                            CP12_1['CP12_1NoOf_chargers'] = 'Active'
+                            CP12_1Status = 'active'
+                            NoOfChargers += 1
+                    
+                    if charger_name == 'CP13_1':
+                        CP13_1['CP13_1Energy'] += energy_consumption
+                        CP13_1['CP13_1TotalSession'] = entry[2]
+                        if energy_consumption > 0:
+                            CP13_1['CP13_1NoOf_chargers'] = 'Active'
+                            CP13_1Status = 'active'
+                            NoOfChargers += 1
+
+                    if charger_name == 'CP14_1':
+                        CP14_1['CP14_1Energy'] += energy_consumption
+                        CP14_1['CP14_1TotalSession'] = entry[2]
+                        if energy_consumption > 0:
+                            CP14_1['CP14_1NoOf_chargers'] = 'Active'
+                            CP14_1Status = 'active'
+                            NoOfChargers += 1
+
+                # Calculate total energy and total sessions
+                total_energy = CP1_1['CP1_1Energy'] + LEV4_1['LEV4_1Energy'] + CP11_1['CP11_1Energy'] + CP12_1['CP12_1Energy'] + CP13_1['CP13_1Energy'] + CP14_1['CP14_1Energy']
+                total_sessions = CP1_1['CP1_1TotalSession'] + LEV4_1['LEV4_1TotalSession'] + CP11_1['CP11_1TotalSession'] + CP12_1['CP12_1TotalSession'] + CP13_1['CP13_1TotalSession'] + CP14_1['CP14_1TotalSession']
+
+                # Create the final result dictionary
+                EVCharger_list.append({
+                    "totalEnergy": round(total_energy, 1),
+                    "totalSessions": total_sessions,
+                    "NoOfChargersUsed": NoOfChargers,
+                    "CP1_1Status": CP1_1Status,
+                    "LEV4_1Status": LEV4_1Status,
+                    "CP11_1Status": CP11_1Status,
+                    "CP12_1Status": CP12_1Status,
+                    "CP13_1Status": CP13_1Status,
+                    "CP14_1Status": CP14_1Status,
+                    "CP1_1EnergyConsumed": CP1_1['CP1_1Energy'],
+                    "LEV4_1EnergyConsumed": LEV4_1['LEV4_1Energy'],
+                    "CP11_1EnergyConsumed": CP11_1['CP11_1Energy'],
+                    "CP12_1EnergyConsumed": CP12_1['CP12_1Energy'],
+                    "CP13_1EnergyConsumed": CP13_1['CP13_1Energy'],
+                    "CP14_1EnergyConsumed": CP14_1['CP14_1Energy'],
+                    "CP12_1Location":"Pond area",
+                    "CP13_1Location":"Pond area",
+                    "CP14_1Location":"Pond area",
+                    "LEV4_1Location":"MLCP 3rd floor",
+                    "CP12_1Capacity":"3.3kW",
+                    "CP13_1Capacity":"3.3kW",
+                    "CP14_1Capacity":"7kW",
+                    "LEV4_1Capacity":"7kW"
+
+                    # Repeat the same for other chargers...
+                })
+                bmscur.close()
+                processed_db.close()
+                charger_cur.close()
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return EVCharger_list
     
     
  #Chillers Api   

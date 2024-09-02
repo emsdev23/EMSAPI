@@ -65,6 +65,49 @@ API_mapping = {
 }
 
 
+@app.get('/ExcessRE/Details')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+
+    ExcessREData=[]
+    try:
+        processed_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    ems_cur = processed_db.cursor()
+
+    ems_cur.execute("SELECT polledTime,ExcessRE,Duration,Stored_in,DeficitRE FROM EMS.ExcessREcard where date(polledTime)=curdate()")
+   
+    res = ems_cur.fetchall()
+
+    # print(res)
+
+    for i in res:
+        polledTime = str(i[0])[11:19]
+        if(i[1]==None):
+            ExcessRE=0
+        else:
+            ExcessRE=round(i[1],2)
+        if(i[2]==None):
+            Duration=0
+        else:
+            Duration=round(i[2],2)
+
+        if(i[3]==None):
+            Stored_in=0
+        else:
+            Stored_in=round(i[3],2)
+
+        if(i[4]==None):
+            DeficitRE=0
+        else:
+            DeficitRE=(round(i[4],2)*-1)
+
+        ExcessREData.append({'polledTime':polledTime,"ExcessRE":ExcessRE,"Duration":Duration,"Stored_in":Stored_in,"DeficitRE":DeficitRE})
+    
+    return ExcessREData
+
+
 @app.post('/control/hourlyDetails/Filtered')
 def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
     hourlyLi = []

@@ -74,6 +74,180 @@ def process_energy_data(data):
 
     return result
 
+
+@app.get('/building/slotwise')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
+    Energy = []
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+
+    awscur = aws_db.cursor()
+
+    awscur.execute("""SELECT c1totalConsumption,c2totalConsumption,c4totalConsumption,c5totalConsumption,
+                      c1wheeledEnergy, c2wheeledEnergy, c4wheeledEnergy, c5wheeledEnergy,
+                      c1windEnergy, c2windEnergy, c4windEnergy, c5windEnergy
+                      FROM EMS.SlotWiseEnergy where polledDate = curdate();""")
+    
+    res = awscur.fetchall()
+
+    for i in res:
+        if i[0] != None:
+            c1Con = round(i[0])
+        else:
+            c1Con = 0
+        if i[1] != None:
+            c2Con = round(i[1])
+        else:
+            c2Con = 0
+        if i[2] != None:
+            c4Con = round(i[2])
+        else:
+            c4Con = 0
+        if i[3] != None:
+            c5Con = round(i[3])
+        else:
+            c5Con = 0
+        if i[4] != None:
+            c1Whl = round(i[4])
+        else:
+            c1Whl = 0
+        if i[5] != None:
+            c2Whl = round(i[5])
+        else:
+            c2Whl = 0
+        if i[6] != None:
+            c4Whl = round(i[6])
+        else:
+            c4Whl = 0
+        if i[7] != None:
+            c5Whl = round(i[7])
+        else:
+            c5Whl = 0
+        if i[8] != None:
+            c1Wd = round(i[8])
+        else:
+            c1Wd = 0
+        if i[9] != None:
+            c2Wd = round(i[9])
+        else:
+            c2Wd = 0 
+        if i[10] != None:
+            c4Wd = round(i[10])
+        else:
+            c4Wd = 0
+        if i[11] != None:
+            c5Wd = round(i[11])
+        else:
+            c5Wd = 0
+    
+    awscur.execute("""SELECT c510totalConsumption,c510wheeledEnergy,c510windEnergy FROM EMS.SlotWiseEnergy 
+                      where polledDate = date_sub(curdate(),interval 1 day);  """)
+    
+    res = awscur.fetchall()
+
+    for i in res:
+        if i[0] != None:
+            c5Con += round(i[0])
+        if i[1] != None:
+            c5Whl += round(i[1])
+        if i[2] != None:
+            c5Wd += round(i[2])
+
+    Energy.append({'c1Consumption':c1Con,'c2Consumption':c2Con,'c4Consumption':c4Con,'c5Consumption':c5Con,
+                   'c1wheeled':c1Whl,'c2Wheeled':c2Whl,'c4Wheeled':c4Whl,'c5Wheeled':c5Whl,'c1Wind':c1Wd,
+                   'c2Wind':c2Wd,'c4Wind':c4Wd,'C5Wind':c5Wd})
+    
+    return Energy
+
+
+@app.post('/building/slotwise/filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    Energy = []
+    try:
+        value = data.get('date')
+        if value and isinstance(value, str):
+            with db.cursor() as awscur:
+                awscur.execute(f"""SELECT c1totalConsumption,c2totalConsumption,c4totalConsumption,c5totalConsumption,
+                                c1wheeledEnergy, c2wheeledEnergy, c4wheeledEnergy, c5wheeledEnergy,
+                                c1windEnergy, c2windEnergy, c4windEnergy, c5windEnergy
+                                FROM EMS.SlotWiseEnergy where polledDate = '{value}';""")
+                
+                res = awscur.fetchall()
+
+                for i in res:
+                    if i[0] != None:
+                        c1Con = round(i[0])
+                    else:
+                        c1Con = 0
+                    if i[1] != None:
+                        c2Con = round(i[1])
+                    else:
+                        c2Con = 0
+                    if i[2] != None:
+                        c4Con = round(i[2])
+                    else:
+                        c4Con = 0
+                    if i[3] != None:
+                        c5Con = round(i[3])
+                    else:
+                        c5Con = 0
+                    if i[4] != None:
+                        c1Whl = round(i[4])
+                    else:
+                        c1Whl = 0
+                    if i[5] != None:
+                        c2Whl = round(i[5])
+                    else:
+                        c2Whl = 0
+                    if i[6] != None:
+                        c4Whl = round(i[6])
+                    else:
+                        c4Whl = 0
+                    if i[7] != None:
+                        c5Whl = round(i[7])
+                    else:
+                        c5Whl = 0
+                    if i[8] != None:
+                        c1Wd = round(i[8])
+                    else:
+                        c1Wd = 0
+                    if i[9] != None:
+                        c2Wd = round(i[9])
+                    else:
+                        c2Wd = 0 
+                    if i[10] != None:
+                        c4Wd = round(i[10])
+                    else:
+                        c4Wd = 0
+                    if i[11] != None:
+                        c5Wd = round(i[11])
+                    else:
+                        c5Wd = 0
+                
+                awscur.execute(f"""SELECT c510totalConsumption,c510wheeledEnergy,c510windEnergy FROM EMS.SlotWiseEnergy 
+                                where polledDate = date_sub('{value}',interval 1 day);  """)
+                
+                res = awscur.fetchall()
+
+                for i in res:
+                    if i[0] != None:
+                        c5Con += round(i[0])
+                    if i[1] != None:
+                        c5Whl += round(i[1])
+                    if i[2] != None:
+                        c5Wd += round(i[2])
+
+                Energy.append({'c1Consumption':c1Con,'c2Consumption':c2Con,'c4Consumption':c4Con,'c5Consumption':c5Con,
+                            'c1wheeled':c1Whl,'c2Wheeled':c2Whl,'c4Wheeled':c4Whl,'c5Wheeled':c5Whl,'c1Wind':c1Wd,
+                            'c2Wind':c2Wd,'c4Wind':c4Wd,'C5Wind':c5Wd})
+                
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+    
+    return Energy
+
 @app.get('/wind/monthTotalEnergy')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     windEnergy = []
@@ -125,7 +299,6 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
     energy = 0
     try:
         value = data.get('date')
-
         if value and isinstance(value, str):
             with db.cursor() as awscur:
                 awscur.execute(f"SELECT polledTime,Energy FROM EMS.windHourly where date(polledTime) = '{value}';")
@@ -413,12 +586,12 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
 def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
     batteryUsageData=[]
     try:
-        processed_db = get_emsdb()
+        processed_db = get_awsdb()
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
    
     ems_cur = processed_db.cursor()
-    ems_cur.execute("SELECT LTO_Average_discharge_power,IoE_Average_discharge_power FROM EMS.BatterysUsage where date(polledtime)=curdate()-3 order by  polledtime desc limit 1;")
+    ems_cur.execute("SELECT LTO_Average_discharge_power,IoE_Average_discharge_power,IOE_Duration,LTO_Duration FROM EMS.BatterysUsage where date(polledtime)=curdate() order by  polledtime desc limit 1;")
     res = ems_cur.fetchall()
 
     for i in res:      
@@ -431,7 +604,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
         else:
             IoE_Average_discharge_power=round(i[1],2)
 
-        batteryUsageData.append({'LTO_Average_discharge_power':LTO_Average_discharge_power,"IoE_Average_discharge_power":IoE_Average_discharge_power})
+        batteryUsageData.append({'LTO_Average_discharge_power':LTO_Average_discharge_power,"IoE_Average_discharge_power":IoE_Average_discharge_power,
+                                 'IOEDuration':i[2],'LTODuration':i[3]})
     
     return batteryUsageData
 
@@ -443,7 +617,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
 
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT LTO_Average_discharge_power,IoE_Average_discharge_power FROM EMS.BatterysUsage where date(polledtime) = '{value}' order by  polledtime desc limit 1")
+                bmscur.execute(f"SELECT LTO_Average_discharge_power,IoE_Average_discharge_power,IOE_Duration,LTO_Duration FROM EMS.BatterysUsage where date(polledtime) = '{value}' order by  polledtime desc limit 1")
                 res = bmscur.fetchall()
         for i in res:
             if(i[0]==None):
@@ -455,7 +629,8 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
             else:
                 IoE_Average_discharge_power=round(i[1],2)
 
-            batteryUsageData.append({'LTO_Average_discharge_power':LTO_Average_discharge_power,"IoE_Average_discharge_power":IoE_Average_discharge_power}) 
+            batteryUsageData.append({'LTO_Average_discharge_power':LTO_Average_discharge_power,"IoE_Average_discharge_power":IoE_Average_discharge_power,
+                                     'IOEDuration':i[2],'LTODuration':i[3]}) 
         return batteryUsageData
     except mysql.connector.Error as e:
         print(e)
@@ -1675,7 +1850,27 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
 
     for i in res:
         polledTime = str(i[0])[11:16]
-        min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2],'wheeledEnergy2':i[3],'windEnergy':i[4]})
+        if i[1] != None:
+            wheel1 = i[1]
+        else:
+            wheel1 = 0
+        if i[2] != None:
+            grid = i[2]
+        else:
+            grid = 0
+        if i[3] != None:
+            wheel2 = i[3]
+        else:
+            wheel2 = 0
+        if i[4] != None:
+            wind = i[4]
+        else:
+            wind = 0
+        
+        grid = grid-wind-wheel1-wheel2
+        if grid<0:
+            grid = 0 
+        min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':grid,'wheeledEnergy2':i[3],'windEnergy':i[4]})
 
     return min_list
 
@@ -1694,7 +1889,27 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
 
                 for i in res:
                     polledTime = str(i[0])[11:16]
-                    min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':i[2],'wheeledEnergy2':i[3],'windEnergy':i[4]})
+                    if i[1] != None:
+                        wheel1 = i[1]
+                    else:
+                        wheel1 = 0
+                    if i[2] != None:
+                        grid = i[2]
+                    else:
+                        grid = 0
+                    if i[3] != None:
+                        wheel2 = i[3]
+                    else:
+                        wheel2 = 0
+                    if i[4] != None:
+                        wind = i[4]
+                    else:
+                        wind = 0
+                    
+                    grid = grid-wind-wheel1-wheel2
+                    if grid<0:
+                        grid = 0 
+                    min_list.append({'polledTime':polledTime,'wheeledEnergy':i[1],'gridEnergy':grid,'wheeledEnergy2':i[3],'windEnergy':i[4]})
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
