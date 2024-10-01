@@ -122,6 +122,50 @@ def getNacelleDir(angle):
 
     return dir     
 
+
+@app.get('/wind/powerVSspeedScatter')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
+    windList = []
+    try:
+        processed_db = get_bmsdb()
+        ems_cur = processed_db.cursor()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+
+    ems_cur.execute("""SELECT otpmgndetailsactivepower,otpmgndetailswindspeed,from_unixtime(otpmgndetailspolledtimestamp)
+                        FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = curdate()
+                        and otpmgndetailswindspeed > 3;""")
+    
+    res = ems_cur.fetchall()
+
+    for i in res:
+        windList.append({'power':i[0],'windspeed':i[1]})
+
+    return windList
+
+@app.post('/wind/powerVSspeedScatter/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
+    windList = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bms_cur:
+                bms_cur.execute(f"""SELECT otpmgndetailsactivepower,otpmgndetailswindspeed,from_unixtime(otpmgndetailspolledtimestamp)
+                                    FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = '{value}'
+                                    and otpmgndetailswindspeed > 3;""")
+                
+                res = bms_cur.fetchall()
+
+                for i in res:
+                    windList.append({'power':i[0],'windspeed':i[1]})
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+    
+    return windList
+
 @app.get('/wind/parameters')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
     windList = []
@@ -155,17 +199,43 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
     
-    ems_cur.execute("""SELECT round(avg((otpmgndetailsactivepower)*0.60)) as power, round(avg(otpmgndetailswindspeed)) 
-                        FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = curdate()
-                        order by otpmgndetailspolledtimestamp;""")
+    ems_cur.execute("""SELECT round(avg(otpmgndetailsactivepower)) as power, round(avg(otpmgndetailswindspeed)) 
+                        FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = curdate() 
+                        and otpmgndetailsactivepower > 0 order by otpmgndetailspolledtimestamp;""")
     
     res = ems_cur.fetchall()
 
     for i in res:
         speed = wind_round(i[1])
         expected = windSpeed[speed]
-        windList.append({"expectedSpeed":10,"windSpeed":i[1],"averagePower":i[0],"expexctedPower":expected})
+        windList.append({"expectedSpeed":20,"windSpeed":i[1],"averagePower":i[0],"expexctedPower":expected})
     
+    return windList
+
+
+@app.post('/wind/expVSact/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
+    windList = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bms_cur:
+                bms_cur.execute(f"""SELECT round(avg(otpmgndetailsactivepower)) as power, round(avg(otpmgndetailswindspeed)) 
+                        FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = '{value}' 
+                        and otpmgndetailsactivepower > 0 order by otpmgndetailspolledtimestamp;""")
+    
+                res = bms_cur.fetchall()
+
+                for i in res:
+                    speed = wind_round(i[1])
+                    expected = windSpeed[speed]
+                    windList.append({"expectedSpeed":20,"windSpeed":i[1],"averagePower":i[0],"expexctedPower":expected})
+    
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
     return windList
 
 @app.get('/wind/speedVSpower')
@@ -374,7 +444,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
    
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT totalApparentPower2,polledTime FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) =curdate() and totalApparentPower2 = (select max(totalApparentPower2) from bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) =curdate())")
+    bms_cur.execute("SELECT totalApparentPower2,polledTime FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) =curdate() and totalApparentPower2 = (select max(totalApparentPower2) from bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) =curdate() and totalApparentPower2 <= 5000)")
    
     res = bms_cur.fetchall()
 
@@ -398,7 +468,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
         if value and isinstance(value, str):
             with db.cursor() as bms_cur:
 
-                bms_cur.execute(f"SELECT totalApparentPower2,polledTime FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}' and totalApparentPower2 = (select max(totalApparentPower2) from bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}')")
+                bms_cur.execute(f"SELECT totalApparentPower2,polledTime FROM bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}' and totalApparentPower2 = (select max(totalApparentPower2) from bmsmgmt_olap_prod_v13.hvacSchneider7230Polling where date(polledTime) = '{value}' and totalApparentPower2 <= 5000)")
    
                 res = bms_cur.fetchall()
 

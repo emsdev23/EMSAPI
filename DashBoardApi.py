@@ -1183,6 +1183,61 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     return co2
 
 
+@app.post('/Dashboard/co2/filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
+    co2 = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bms_cur:
+
+                bms_cur.execute(f"select sum(energy) from EMS.roofTopHour where date(polledTime) = '{value}';")
+        
+                res = bms_cur.fetchall()
+        
+                if res[0][0] != None:
+                    rooftop = res[0][0]
+                else:
+                    rooftop = 0
+
+                bms_cur.execute("SELECT sum(Energy) FROM EMS.WheeledHourly where date(polledTime) = curdate();")
+
+                res1 = bms_cur.fetchall()
+
+                bms_cur.execute("SELECT sum(Energy) FROM EMS.WheeledHourlyph2 where date(polledTime) = curdate();")
+
+                res2 = bms_cur.fetchall()
+
+                bms_cur.execute("SELECT sum(Energy) FROM EMS.windHourly where date(polledTime) = curdate();")
+
+                res3 = bms_cur.fetchall()
+
+                if res1[0][0] != None:
+                    wheeled = res1[0][0]
+                else:
+                    wheeled = 0
+
+                if res2[0][0] != None:
+                    wheeled2 = res2[0][0]
+                else:
+                    wheeled2 = 0
+                
+                if res3[0][0] != None:
+                    wind = res3[0][0]
+                else:
+                    wind = 0
+
+                co2 = [{'co2reduced':round(((rooftop+wheeled+wheeled2+wind)/1000)*0.71,2)}]
+
+                bms_cur.close()
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return co2
+
+
 # Dashboard Grid  api
 @app.get('/Dashboard/Grid')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):

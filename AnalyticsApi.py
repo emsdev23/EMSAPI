@@ -9,7 +9,6 @@ app = FastAPI()
 
 origins = [
     "*",
-    # Add more origins as needed
 ]
 
 app.add_middleware(
@@ -75,178 +74,166 @@ def process_energy_data(data):
     return result
 
 
-@app.get('/building/slotwise')
-def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
-    Energy = []
+@app.get('/SlotWise')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    slotWise = []
     try:
-        aws_db = get_awsdb()
+        ems_db = get_awsdb()
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
-
-    awscur = aws_db.cursor()
-
-    awscur.execute("""SELECT c1totalConsumption,c2totalConsumption,c4totalConsumption,c5totalConsumption,
-                      c1wheeledEnergy, c2wheeledEnergy, c4wheeledEnergy, c5wheeledEnergy,
-                      c1windEnergy, c2windEnergy, c4windEnergy, c5windEnergy
-                      FROM EMS.SlotWiseEnergy where polledDate = curdate();""")
     
-    res = awscur.fetchall()
+    emscur = ems_db.cursor()
 
-    for i in res:
-        if i[0] != None:
-            c1Con = round(i[0])
-        else:
-            c1Con = 0
-        if i[1] != None:
-            c2Con = round(i[1])
-        else:
-            c2Con = 0
-        if i[2] != None:
-            c4Con = round(i[2])
-        else:
-            c4Con = 0
-        if i[3] != None:
-            c5Con = round(i[3])
-        else:
-            c5Con = 0
-        if i[4] != None:
-            c1Whl = round(i[4])
-        else:
-            c1Whl = 0
-        if i[5] != None:
-            c2Whl = round(i[5])
-        else:
-            c2Whl = 0
-        if i[6] != None:
-            c4Whl = round(i[6])
-        else:
-            c4Whl = 0
-        if i[7] != None:
-            c5Whl = round(i[7])
-        else:
-            c5Whl = 0
-        if i[8] != None:
-            c1Wd = round(i[8])
-        else:
-            c1Wd = 0
-        if i[9] != None:
-            c2Wd = round(i[9])
-        else:
-            c2Wd = 0 
-        if i[10] != None:
-            c4Wd = round(i[10])
-        else:
-            c4Wd = 0
-        if i[11] != None:
-            c5Wd = round(i[11])
-        else:
-            c5Wd = 0
+    emscur.execute("""SELECT monthname(polledDate),c1Con,c2Con,c4Con,c5Con,
+                        c1Wheeled,c2Wheeled,c4Wheeled,c5Wheeled,
+                        c1WhlRem,c2WhlRem,c4WhlRem,c5WhlRem,
+                        c1Wind,c2Wind,c4Wind,c5Wind,
+                        c1WindRem,c2WindRem,c4WindRem,c5WindRem
+                    FROM EMS.slotWiseCalculation where month(polledDate) = month(curdate());""")
     
-    awscur.execute("""SELECT c510totalConsumption,c510wheeledEnergy,c510windEnergy FROM EMS.SlotWiseEnergy 
-                      where polledDate = date_sub(curdate(),interval 1 day);  """)
-    
-    res = awscur.fetchall()
+    res = emscur.fetchall()
 
-    for i in res:
-        if i[0] != None:
-            c5Con += round(i[0])
-        if i[1] != None:
-            c5Whl += round(i[1])
-        if i[2] != None:
-            c5Wd += round(i[2])
+    if len(res) > 0:
+        for i in res:
+            month = i[0]
+            c1con = i[1]
+            c2con = i[2]
+            c4con = i[3]
+            c5con = i[4]
+            c1wheel = i[5]
+            c2wheel = i[6]
+            c4wheel = i[7]
+            c5wheel = i[8]
+            c1whlR = i[9]
+            c2whlR = i[10] 
+            c4whlR = i[11]
+            c5whlR = i[12]
+            c1wind = i[13]
+            c2wind = i[14]
+            c4wind = i[15]
+            c5wind = i[16]
+            c1windR = i[17]
+            c2windR = i[18]
+            c4windR = i[19]
+            c5windR = i[20]
 
-    Energy.append({'c1Consumption':c1Con,'c2Consumption':c2Con,'c4Consumption':c4Con,'c5Consumption':c5Con,
-                   'c1wheeled':c1Whl,'c2Wheeled':c2Whl,'c4Wheeled':c4Whl,'c5Wheeled':c5Whl,'c1Wind':c1Wd,
-                   'c2Wind':c2Wd,'c4Wind':c4Wd,'C5Wind':c5Wd})
-    
-    return Energy
+            if c1windR < 0:
+                c4con = c4con+abs(c1windR)
+            if c2windR < 0:
+                c4con = c4con+abs(c2windR)
+            if c4windR < 0:
+                c5con = c5con+abs(c4windR)
 
+            if c1windR > 0:
+                c1windR = 0
+            if c2windR > 0:
+                c2windR = 0
+            if c4windR > 0:
+                c4windR = 0
+            if c5windR > 0:
+                c5windR = 0
 
-@app.post('/building/slotwise/filtered')
+            slotWise.append({'c1con':c1con,'c2con':c2con,'c4con':c4con,'c5con':c5con,
+                             'c1wheel':c1wheel,'c2wheel':c2wheel,'c4wheel':c4wheel,'c5wheel':c5wheel,
+                             'c1wheelRem':c1whlR,'c2wheelRem':c2whlR,'c4wheelRem':c4whlR,'c5wheelRem':c5whlR,
+                             'c1wind':c1wind,'c2wind':c2wind,'c4wind':c4wind,'c5wind':c5wind,
+                             'c1windRem':c1windR,'c2windRem':c2windR,'c4windRem':c4windR,'c5windRem,':c5windR,
+                             'month':month})
+
+    return slotWise
+
+@app.post('/SlotWise/filtered')
 def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
-    Energy = []
+    slotWise = []
     try:
-        value = data.get('date')
+        value = data.get('month')
         if value and isinstance(value, str):
             with db.cursor() as awscur:
-                awscur.execute(f"""SELECT c1totalConsumption,c2totalConsumption,c4totalConsumption,c5totalConsumption,
-                                c1wheeledEnergy, c2wheeledEnergy, c4wheeledEnergy, c5wheeledEnergy,
-                                c1windEnergy, c2windEnergy, c4windEnergy, c5windEnergy
-                                FROM EMS.SlotWiseEnergy where polledDate = '{value}';""")
-                
+                awscur.execute(f"""SELECT monthname(polledDate),c1Con,c2Con,c4Con,c5Con,
+                            c1Wheeled,c2Wheeled,c4Wheeled,c5Wheeled,
+                            c1WhlRem,c2WhlRem,c4WhlRem,c5WhlRem,
+                            c1Wind,c2Wind,c4Wind,c5Wind,
+                            c1WindRem,c2WindRem,c4WindRem,c5WindRem
+                        FROM EMS.slotWiseCalculation where month(polledDate) = '{value}';""")
+                            
                 res = awscur.fetchall()
 
-                for i in res:
-                    if i[0] != None:
-                        c1Con = round(i[0])
-                    else:
-                        c1Con = 0
-                    if i[1] != None:
-                        c2Con = round(i[1])
-                    else:
-                        c2Con = 0
-                    if i[2] != None:
-                        c4Con = round(i[2])
-                    else:
-                        c4Con = 0
-                    if i[3] != None:
-                        c5Con = round(i[3])
-                    else:
-                        c5Con = 0
-                    if i[4] != None:
-                        c1Whl = round(i[4])
-                    else:
-                        c1Whl = 0
-                    if i[5] != None:
-                        c2Whl = round(i[5])
-                    else:
-                        c2Whl = 0
-                    if i[6] != None:
-                        c4Whl = round(i[6])
-                    else:
-                        c4Whl = 0
-                    if i[7] != None:
-                        c5Whl = round(i[7])
-                    else:
-                        c5Whl = 0
-                    if i[8] != None:
-                        c1Wd = round(i[8])
-                    else:
-                        c1Wd = 0
-                    if i[9] != None:
-                        c2Wd = round(i[9])
-                    else:
-                        c2Wd = 0 
-                    if i[10] != None:
-                        c4Wd = round(i[10])
-                    else:
-                        c4Wd = 0
-                    if i[11] != None:
-                        c5Wd = round(i[11])
-                    else:
-                        c5Wd = 0
-                
-                awscur.execute(f"""SELECT c510totalConsumption,c510wheeledEnergy,c510windEnergy FROM EMS.SlotWiseEnergy 
-                                where polledDate = date_sub('{value}',interval 1 day);  """)
-                
-                res = awscur.fetchall()
+                if len(res) > 0:
+                    for i in res:
+                        month = i[0]
+                        c1con = i[1]
+                        c2con = i[2]
+                        c4con = i[3]
+                        c5con = i[4]
+                        c1wheel = i[5]
+                        c2wheel = i[6]
+                        c4wheel = i[7]
+                        c5wheel = i[8]
+                        c1whlR = i[9]
+                        c2whlR = i[10] 
+                        c4whlR = i[11]
+                        c5whlR = i[12]
+                        c1wind = i[13]
+                        c2wind = i[14]
+                        c4wind = i[15]
+                        c5wind = i[16]
+                        c1windR = i[17]
+                        c2windR = i[18]
+                        c4windR = i[19]
+                        c5windR = i[20]
 
-                for i in res:
-                    if i[0] != None:
-                        c5Con += round(i[0])
-                    if i[1] != None:
-                        c5Whl += round(i[1])
-                    if i[2] != None:
-                        c5Wd += round(i[2])
+                        if c1windR < 0:
+                            c4con = c4con+abs(c1windR)
+                        if c2windR < 0:
+                            c4con = c4con+abs(c2windR)
+                        if c4windR < 0:
+                            c5con = c5con+abs(c4windR)
 
-                Energy.append({'c1Consumption':c1Con,'c2Consumption':c2Con,'c4Consumption':c4Con,'c5Consumption':c5Con,
-                            'c1wheeled':c1Whl,'c2Wheeled':c2Whl,'c4Wheeled':c4Whl,'c5Wheeled':c5Whl,'c1Wind':c1Wd,
-                            'c2Wind':c2Wd,'c4Wind':c4Wd,'C5Wind':c5Wd})
-                
+                        if c1windR > 0:
+                            c1windR = 0
+                        if c2windR > 0:
+                            c2windR = 0
+                        if c4windR > 0:
+                            c4windR = 0
+                        if c5windR > 0:
+                            c5windR = 0
+
+                        slotWise.append({'c1con':c1con,'c2con':c2con,'c4con':c4con,'c5con':c5con,
+                                        'c1wheel':c1wheel,'c2wheel':c2wheel,'c4wheel':c4wheel,'c5wheel':c5wheel,
+                                        'c1wheelRem':c1whlR,'c2wheelRem':c2whlR,'c4wheelRem':c4whlR,'c5wheelRem':c5whlR,
+                                        'c1wind':c1wind,'c2wind':c2wind,'c4wind':c4wind,'c5wind':c5wind,
+                                        'c1windRem':c1windR,'c2windRem':c2windR,'c4windRem':c4windR,'c5windRem,':c5windR,
+                                        'month':month})
+
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
     
-    return Energy
+    return slotWise
+
+@app.get('/alert/logs')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    alerts = []
+    try:
+        ems_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = ems_db.cursor()
+
+    emscur.execute("""SELECT recordId,alerttime,alert,limitvalue,systemName,severity,action 
+                        FROM EMS.alertLogs order by alerttime desc;""")
+    
+    res = emscur.fetchall()
+
+    for i in res:
+        dt = str(i[1])
+        dated = dt[8:10]+'/'+dt[5:7]+'/'+dt[0:4]
+        timer = dt[11:]
+        alerts.append({'id':i[0],'alerttimereceived':[dated,timer],'alert':i[2],
+                       'limitvalue':i[3],'systemName':i[4],'severity':i[5],'action':i[6]})
+    
+    return alerts
+
 
 @app.get('/wind/monthTotalEnergy')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
@@ -287,7 +274,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
         if i[1] != None:
             energy += i[1]
     if energy != 0:
-        plf = round((energy/(24*2000))*100,2)
+        plf = round((energy/(24*3000))*100,2)
     windEnergy.append({"Energy":energy,"PLF":plf})
 
     return windEnergy
@@ -309,7 +296,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
                     if i[1] != None:
                         energy += i[1]
                 if energy != 0:
-                    plf = (energy/(24*2000))*100    
+                    plf = (energy/(24*3000))*100    
                 windEnergy.append({"Energy":energy,"PLF":plf})
         
     except mysql.connector.Error as e:
@@ -1158,6 +1145,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     if len(res) > 0:
         if res[0][0] != None:
             max_res = res[0][0]
+            if max_res > 4500:
+                max_res = 4500
         else:
             max_res = None
     else:
@@ -1198,6 +1187,8 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
                 if len(res) > 0:
                     if res[0][0] != None:
                         max_res = res[0][0]
+                        if max_res > 4500:
+                            max_res = 4500
                     else:
                         max_res = None
                 else:
@@ -1281,7 +1272,10 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
         # print(max_res)
         max_res = round(max_res)
 
-        max_res = max_res - ((max_res*5)/100)
+        max_res = max_res - ((max_res*2)/100)
+
+        if max_res > 4400:
+            max_res = 4400
 
         print(max_res)
 
@@ -1323,7 +1317,10 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
                     # print(max_res)
                     max_res = round(max_res)
 
-                    max_res = max_res - ((max_res*5)/100)
+                    max_res = max_res - ((max_res*2)/100)
+
+                    if max_res > 4400:
+                        max_res = 4400
 
                     awscur.execute(f"SELECT peakdemand,polledTime FROM EMS.peakdemandHourly where date(polledTime) = '{value}' and peakdemand >= {max_res};")
 
