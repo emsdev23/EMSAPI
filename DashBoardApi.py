@@ -55,6 +55,85 @@ def get_RAWemsdb():
     return db
 
 
+
+@app.get('/EnergyProfile/RenewableEnergy')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+
+    RenewableEnergyData = []
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+
+    ems_cur = processed_db.cursor()
+
+    ems_cur.execute(f"""SELECT sum(gridEnergy),sum(windEnergy),sum(wheeledinEnergy),sum(wheeledinEnergy2),sum(rooftopEnergy),sum(deisel)
+            FROM EMS.buidingConsumptionDayWise where month(polledDate) = month(curdate()) and year(polledDate) = year(curdate());""")
+
+    res = ems_cur.fetchall()
+
+    for i in res:
+        grid = i[0]-(i[1]+i[2]+i[3])
+
+        if grid < 0:
+            grid = 0
+
+        Total_RE = round(i[1]+i[2]+i[3]+i[4])
+        Total_fossil =round(grid+i[5])
+
+        REPercentage = round((Total_RE/(Total_RE+Total_fossil))*100)
+        FossilPercentage = round((Total_fossil/(Total_RE+Total_fossil))*100)
+
+        RenewableEnergyData.append({
+            'Total_RE': Total_RE,
+            'Total_fossil': Total_fossil,
+            'RE_Percentage': REPercentage,
+            'Fossil_Percentage': FossilPercentage
+        })
+
+    return RenewableEnergyData
+
+
+@app.post('/EnergyProfile/RenewableEnergy/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
+    RenewableEnergyData = []
+
+    try:
+        value = data.get('date')
+        year = value[0:4]
+        month = value[5:]
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"""SELECT sum(gridEnergy),sum(windEnergy),sum(wheeledinEnergy),sum(wheeledinEnergy2),sum(rooftopEnergy),sum(deisel)
+                        FROM EMS.buidingConsumptionDayWise where month(polledDate) = '{month}' and year(polledDate) = '{year}';""")
+                
+                res = bmscur.fetchall()
+
+                for i in res:
+                    grid = i[0]-(i[1]+i[2]+i[3])
+
+                    if grid < 0:
+                        grid = 0
+
+                    Total_RE = round(i[1]+i[2]+i[3]+i[4])
+                    Total_fossil = round(grid+i[5])
+
+                    REPercentage = round((Total_RE/(Total_RE+Total_fossil))*100)
+                    FossilPercentage = round((Total_fossil/(Total_RE+Total_fossil))*100)
+
+                    RenewableEnergyData.append({
+                        'Total_RE': Total_RE,
+                        'Total_fossil': Total_fossil,
+                        'RE_Percentage': REPercentage,
+                        'Fossil_Percentage': FossilPercentage
+                    })
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return RenewableEnergyData
+
+
+
 @app.get('/Dashboard/TopTenClients')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     TopTenClients_Response = []
@@ -405,10 +484,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     
     emscur = processed_db.cursor()
 
-    emscur.execute("""SELECT polledtime,tenantname,Energy,physical_location FROM ( SELECT polledtime,Energy,tenantname,physical_location, ROW_NUMBER() 
-                        OVER (PARTITION BY HOUR(polledtime) ORDER BY Energy DESC) AS row_num FROM EMS.Clientshourlysum 
-                        WHERE DATE(polledtime) = CURDATE() ) AS ranked_data
-                        WHERE row_num <= 4 order by polledtime desc limit 4;""")
+    emscur.execute("""SELECT polledTime, tenantname, physical_location, SUM(Energy) AS total_energy FROM EMS.Clientshourlysum where date(polledtime) = curdate()
+                    GROUP BY tenantname, physical_location order by total_energy desc limit 5;""")
     
     res = emscur.fetchall()
     
@@ -429,7 +506,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         if value and isinstance(value, str):
             with db.cursor() as emscur:
                 emscur.execute(f"""SELECT polledTime,tenantname, SUM(Energy),physical_location AS total_energy FROM EMS.Clientshourlysum
-                WHERE date(polledTime) = '{value}' GROUP BY tenantname order by total_energy desc limit 4;""")
+                WHERE date(polledTime) = '{value}' GROUP BY tenantname order by total_energy desc limit 5;""")
 
                 res = emscur.fetchall()
 
@@ -923,10 +1000,10 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     else:
         wind = 0
 
-    grid = grid-wind-wheeled2
+    total_grid = grid-wind-wheeled2
 
-    if grid < 0 :
-        grid = 0
+    if total_grid < 0 :
+        total_grid = 0
 
     bms_cur.execute("SELECT round(sum(Energy)) FROM EMS.DGHourly where date(polledTime) = curdate();")
 
@@ -949,9 +1026,9 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     avgfac = powerres[0][0]
     minfac = powerres[0][1]
 
-    RE = round((wheeled+wheeled2+rooftop+wind)/(grid+wheeled2+wheeled+diesel+wind)*100,3)
+    RE = round((wheeled+wheeled2+rooftop+wind)/(total_grid+wheeled2+wheeled+diesel+wind)*100,3)
 
-    Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':grid,'wind':wind,
+    Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':total_grid,'wind':wind,
                        'diesel':diesel,'avgFactor':avgfac,'minFactor':minfac,'RE':RE})
     bms_cur.close()
 
@@ -993,10 +1070,10 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 else:
                     wind = 0
 
-                grid = grid-wind-wheeled-wheeled2
+                total_grid = grid-wind-wheeled-wheeled2
 
-                if grid < 0 :
-                    grid = 0
+                if total_grid < 0 :
+                    total_grid = 0
 
                 bms_cur.execute(f"SELECT sum(Energy) FROM EMS.DGHourly where date(polledTime) = '{value}';")
 
@@ -1017,9 +1094,9 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 avgfac = powerres[0][0]
                 minfac = powerres[0][1]
 
-                RE = ((wheeled+wheeled2+rooftop+wind)/(grid+wheeled2+wheeled+diesel+wind))*100
+                RE = ((wheeled+wheeled2+rooftop+wind)/(total_grid+wheeled2+wheeled+diesel+wind))*100
 
-                Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':grid,'wind':wind,
+                Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':total_grid,'wind':wind,
                                 'diesel':diesel,'avgFactor':avgfac,'minFactor':minfac,'RE':RE})
                 bms_cur.close()
     
