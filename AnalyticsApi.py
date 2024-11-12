@@ -4,6 +4,7 @@ import mysql.connector
 from fastapi.responses import JSONResponse
 import math
 import json
+from datetime import datetime
 
 app = FastAPI()
 
@@ -74,6 +75,193 @@ def process_energy_data(data):
     return result
 
 
+@app.get('/Consumption/HourlyData')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    Consumption = []
+    try:
+        ems_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = ems_db.cursor()
+
+    emscur.execute("""SELECT polledTime,grid33KvA,windEnergy,wheeledinEnergy,wheeledinEnergy2,rooftopEnergy 
+            FROM EMS.buildingConsumption where date(polledTime) = curdate();""")
+    
+    res = emscur.fetchall()
+
+    for i in res:
+        polledTime = str(i[0])[11:13]
+        if i[1] != None:
+            grid = i[1]
+        else:
+            grid = 0
+        if i[2] != None:
+            wheel = i[2]
+        else:
+            wheel = 0
+        if i[3] != None:
+            wheel2 = i[3]
+        else:
+            wheel2 = 0
+        if i[4] != None:
+            wind = i[4]
+        else:
+            wind = 0
+        if i[5] != None:
+            roof = i[5]
+        else:
+            roof = 0
+        
+        wheelSolar = wheel+wheel2
+        RE = wheel2+wheel+wind+roof
+        if polledTime == '06' or polledTime == '10' or polledTime == '22' or polledTime == '18':
+            range = 5
+        else:
+            range = 0
+
+        Consumption.append({'polledTime':polledTime,'range':range,'wheeledSolar':wheelSolar/1000,'RE':RE/1000,
+                            'roof':roof/1000,'grid':grid/1000,'wind':wind/1000})
+    
+    return Consumption
+        
+@app.post('/Consumption/HourlyData/filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    Consumption = []
+    try:
+        value = data.get('date')
+        if value and isinstance(value, str):
+            with db.cursor() as awscur:
+                awscur.execute(f"""SELECT polledTime,grid33KvA,windEnergy,wheeledinEnergy,wheeledinEnergy2,rooftopEnergy 
+                            FROM EMS.buildingConsumption where date(polledTime) = '{value}';""")
+                
+                res = awscur.fetchall()
+
+                for i in res:
+                    polledTime = str(i[0])[11:13]
+                    if i[1] != None:
+                        grid = i[1]
+                    else:
+                        grid = 0
+                    if i[2] != None:
+                        wheel = i[2]
+                    else:
+                        wheel = 0
+                    if i[3] != None:
+                        wheel2 = i[3]
+                    else:
+                        wheel2 = 0
+                    if i[4] != None:
+                        wind = i[4]
+                    else:
+                        wind = 0
+                    if i[5] != None:
+                        roof = i[5]
+                    else:
+                        roof = 0
+                    
+                    wheelSolar = wheel+wheel2
+                    RE = wheel2+wheel+wind+roof
+                    if polledTime == '06' or polledTime == '10' or polledTime == '22' or polledTime == '18':
+                        range = 5
+                    else:
+                        range = 0
+
+                    Consumption.append({'polledTime':polledTime,'range':range,'wheeledSolar':wheelSolar/1000,'RE':RE/1000,
+                            'roof':roof/1000,'grid':grid/1000,'wind':wind/1000})
+                
+
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+    
+    return Consumption    
+
+@app.get('/SlotWise/Bill')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    slotWise = []
+    try:
+        ems_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = ems_db.cursor()
+
+    emscur.execute("""select month(polledDate),c1Consumption,c2Consumption,c4Consumption,c5Consumption,
+            c1WheeledEnergy,c2WheeledEnergy,c4WheeledEnergy,c5WheeledEnergy,
+            c1WindEnergy,c2WindEnergy,c4WindEnergy,c5WindEnergy
+            from EMS.SlotWiseBillData where month(polledDate) = month(date_sub(curdate(),interval 30 day))
+            and year(polledDate) = year(curdate());""")
+    
+    res = emscur.fetchall()
+
+    if len(res) > 0:
+        for i in res:
+            month = i[0]
+            c1con = i[1]/1000
+            c2con = i[2]/1000
+            c4con = i[3]/1000
+            c5con = i[4]/1000
+            c1wheel = i[5]/1000
+            c2wheel = i[6]/1000
+            c4wheel = i[7]/1000
+            c5wheel = i[8]/1000
+            c1wind = i[9]/1000
+            c2wind = i[10]/1000
+            c4wind = i[11]/1000
+            c5wind = i[12]/1000
+
+            slotWise.append({'month':month,'c1con':c1con,'c2con':c2con,'c4con':c4con,'c5con':c5con,
+                             'c1wheel':c1wheel,'c2wheel':c2wheel,'c4wheel':c4wheel,'c5wheel':c5wheel,
+                             'c1wind':c1wind,'c2wind':c2wind,'c4wind':c4wind,'c5wind':c5wind})
+
+    return slotWise
+
+
+@app.post('/SlotWise/Bill/filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    slotWise = []
+    try:
+        value = data.get('month')
+        if value and isinstance(value, str):
+            year = int(value[0:4])
+            mnth = int(value[5:7])
+            print(year,mnth)
+            with db.cursor() as awscur:
+                awscur.execute(f"""select month(polledDate),c1Consumption,c2Consumption,c4Consumption,c5Consumption,
+                        c1WheeledEnergy,c2WheeledEnergy,c4WheeledEnergy,c5WheeledEnergy,
+                        c1WindEnergy,c2WindEnergy,c4WindEnergy,c5WindEnergy
+                        from EMS.SlotWiseBillData where month(polledDate) = {mnth}
+                        and year(polledDate) = {year}; ;""")
+                            
+                res = awscur.fetchall()
+
+                if len(res) > 0:
+                    for i in res:
+                        month = i[0]
+                        c1con = i[1]/1000
+                        c2con = i[2]/1000
+                        c4con = i[3]/1000
+                        c5con = i[4]/1000
+                        c1wheel = i[5]/1000
+                        c2wheel = i[6]/1000
+                        c4wheel = i[7]/1000
+                        c5wheel = i[8]/1000
+                        c1wind = i[9]/1000
+                        c2wind = i[10]/1000
+                        c4wind = i[11]/1000
+                        c5wind = i[12]/1000
+
+                        slotWise.append({'month':month,'c1con':c1con,'c2con':c2con,'c4con':c4con,'c5con':c5con,
+                                        'c1wheel':c1wheel,'c2wheel':c2wheel,'c4wheel':c4wheel,'c5wheel':c5wheel,
+                                        'c1wind':c1wind,'c2wind':c2wind,'c4wind':c4wind,'c5wind':c5wind})
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+    
+    return slotWise
+
+
 @app.get('/SlotWise')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     slotWise = []
@@ -89,7 +277,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
                         c1WhlRem,c2WhlRem,c4WhlRem,c5WhlRem,
                         c1Wind,c2Wind,c4Wind,c5Wind,
                         c1WindRem,c2WindRem,c4WindRem,c5WindRem
-                    FROM EMS.slotWiseCalculation where month(polledDate) = month(curdate());""")
+                    FROM EMS.slotWiseCalculation where month(polledDate) = month(curdate() 
+                    and year(polledDate) = year(curdate()));""")
     
     res = emscur.fetchall()
 
@@ -148,13 +337,15 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
     try:
         value = data.get('month')
         if value and isinstance(value, str):
+            year = int(value[0:4])
+            mnth = int(value[5:])
             with db.cursor() as awscur:
                 awscur.execute(f"""SELECT monthname(polledDate),c1Con,c2Con,c4Con,c5Con,
                             c1Wheeled,c2Wheeled,c4Wheeled,c5Wheeled,
                             c1WhlRem,c2WhlRem,c4WhlRem,c5WhlRem,
                             c1Wind,c2Wind,c4Wind,c5Wind,
                             c1WindRem,c2WindRem,c4WindRem,c5WindRem
-                        FROM EMS.slotWiseCalculation where month(polledDate) = '{value}';""")
+                        FROM EMS.slotWiseCalculation where month(polledDate) = {mnth} and year(polledDate) = {year} ;""")
                             
                 res = awscur.fetchall()
 
@@ -234,6 +425,104 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     
     return alerts
 
+
+@app.get('/wind/dayEnergyPlot')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
+    windEnergy = []
+
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    awscur = aws_db.cursor()
+    
+    awscur.execute("SELECT polledDate,Energy FROM EMS.windDayWise order by polledDate desc limit 7;")
+
+    res = awscur.fetchall()
+
+    for i in res:
+        windEnergy.append({"polledDate":i[0],"Energy":i[1]})
+
+    return windEnergy
+
+
+@app.post('/wind/dayEnergyPlot/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    windEnergy = []
+    try:
+        value1 = data.get('startdate')
+        value2 = data.get('enddate')
+        if value1 and value2:
+            with db.cursor() as awscur:
+                awscur.execute(f"""SELECT polledDate,Energy FROM EMS.windDayWise
+                where polledDate between '{value1}' and '{value2}';""")
+                res =  awscur.fetchall()
+
+                for i in res:
+                    windEnergy.append({"polledDate":i[0],"Energy":i[1]})
+        elif value1:
+            with db.cursor() as awscur:
+                value2 = str(datetime.now())[0:10]
+                awscur.execute(f"""SELECT polledDate,Energy FROM EMS.windDayWise
+                where polledDate between '{value1}' and '{value2}';""")
+                res =  awscur.fetchall()
+
+                for i in res:
+                    windEnergy.append({"polledDate":i[0],"Energy":i[1]})
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+
+    return windEnergy
+
+
+@app.get('/wind/monthEnergyPlot')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
+    windEnergy = []
+
+    try:
+        aws_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    awscur = aws_db.cursor()
+
+    awscur.execute("select year(polledDate),month(polledDate),Energy from EMS.windMonthWise order by polledDate desc limit 6;")
+
+    res =  awscur.fetchall()
+
+    for i in res:
+        windEnergy.append({"Year":i[0],'Month':i[1],"Energy":i[2]})
+
+    return windEnergy
+
+@app.post('/wind/monthEnergyPlot/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    windEnergy = []
+    try:
+        value1 = data.get('startdate')
+        value2 = data.get('enddate')
+        if value1 and value2:
+            with db.cursor() as awscur:
+                awscur.execute(f"""select year(polledDate),month(polledDate),Energy from EMS.windMonthWise
+                    where polledDate BETWEEN '{value1}' AND '{value2}';""")
+                res =  awscur.fetchall()
+
+                for i in res:
+                    windEnergy.append({"Year":i[0],'Month':i[1],"Energy":i[2]})
+        elif value1:
+            with db.cursor() as awscur:
+                value2 = str(datetime.now())[0:10]
+                awscur.execute(f"""select year(polledDate),month(polledDate),Energy from EMS.windMonthWise
+                    where polledDate BETWEEN '{value1}' AND '{value2}';""")
+                res =  awscur.fetchall()
+
+                for i in res:
+                    windEnergy.append({"Year":i[0],'Month':i[1],"Energy":i[2]})
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+
+    return windEnergy
 
 @app.get('/wind/monthTotalEnergy')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):

@@ -54,7 +54,73 @@ def get_RAWemsdb():
     )
     return db
 
+@app.get('/EnergyProfile/Consumption')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    Consumption = []
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
 
+    ems_cur = processed_db.cursor()
+
+    ems_cur.execute("SELECT gridEnergy,rooftopEnergy,deisel FROM EMS.buidingConsumptionDayWise where polledDate = curdate();")
+
+    res = ems_cur.fetchall()
+
+    for i in res:
+        if i[0] != None:
+            gd = i[0]
+        else:
+            gd = 0
+        if i[1] != None:
+            rf = i[1]
+        else:
+            rf = 0
+        if i[2] != None:
+            dg = i[2]
+        else:
+            dg = 0
+        con = gd+rf+dg
+
+        Consumption.append({"Consumption":con})
+
+    return Consumption
+
+
+@app.post('/EnergyProfile/Consumption/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
+    Consumption = []
+
+    try:
+        value = data.get('date')
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT gridEnergy,rooftopEnergy,deisel FROM EMS.buidingConsumptionDayWise where polledDate = '{value}';")
+
+                res = bmscur.fetchall()
+
+                for i in res:
+                    if i[0] != None:
+                        gd = i[0]
+                    else:
+                        gd = 0
+                    if i[1] != None:
+                        rf = i[1]
+                    else:
+                        rf = 0
+                    if i[2] != None:
+                        dg = i[2]
+                    else:
+                        dg = 0
+                    con = gd+rf+dg
+
+                    Consumption.append({"Consumption":con})
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return Consumption
 
 @app.get('/EnergyProfile/RenewableEnergy')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):

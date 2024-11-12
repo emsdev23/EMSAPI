@@ -255,7 +255,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
 
     for i in res:
         polledTime = str(i[2])[11:16]
-        windList.append({"polledTime":polledTime,"activePower":i[0],"windSpeed":i[1]})
+        if i[0] != None and i[0] >= 0:
+            windList.append({"polledTime":polledTime,"activePower":i[0],"windSpeed":i[1]})
 
     return windList
 
@@ -276,7 +277,8 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
 
                 for i in res:
                     polledTime = str(i[2])[11:16]
-                    windList.append({"polledTime":polledTime,"activePower":i[0],"windSpeed":i[1]})
+                    if i[0] != None and i[0] >= 0:
+                        windList.append({"polledTime":polledTime,"activePower":i[0],"windSpeed":i[1]})
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
