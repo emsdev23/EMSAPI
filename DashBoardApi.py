@@ -64,7 +64,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     ems_cur = processed_db.cursor()
 
-    ems_cur.execute("SELECT gridEnergy,rooftopEnergy,deisel FROM EMS.buidingConsumptionDayWise where polledDate = curdate();")
+    ems_cur.execute("SELECT sum(gridEnergy),sum(rooftopEnergy),sum(diesel) FROM EMS.buildingConsumption where date(polledTime) = curdate();")
 
     res = ems_cur.fetchall()
 
@@ -96,7 +96,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         value = data.get('date')
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT gridEnergy,rooftopEnergy,deisel FROM EMS.buidingConsumptionDayWise where polledDate = '{value}';")
+                bmscur.execute(f"SELECT sum(gridEnergy),sum(rooftopEnergy),sum(diesel) FROM EMS.buildingConsumption where date(polledTime) = '{value}';")
 
                 res = bmscur.fetchall()
 
@@ -133,19 +133,41 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     ems_cur = processed_db.cursor()
 
-    ems_cur.execute(f"""SELECT sum(gridEnergy),sum(windEnergy),sum(wheeledinEnergy),sum(wheeledinEnergy2),sum(rooftopEnergy),sum(deisel)
-            FROM EMS.buidingConsumptionDayWise where month(polledDate) = month(curdate()) and year(polledDate) = year(curdate());""")
+    ems_cur.execute(f"""SELECT sum(gridEnergy),sum(windEnergy),sum(wheeledinEnergy),sum(wheeledinEnergy2),sum(rooftopEnergy),sum(diesel) 
+                        FROM EMS.buildingConsumption where 
+                        month(polledTime) = month(curdate()) and year(polledTime) = year(curdate());""")
 
     res = ems_cur.fetchall()
 
     for i in res:
-        grid = i[0]-(i[1]+i[2]+i[3])
+        if i[1] != None:
+            wd = i[1]
+        else:
+            wd = 0
+        if i[2] != None:
+            wh = i[2]
+        else:
+            wh = 0
+        if i[3] != None:
+            wh2 = i[3]
+        else:
+            wh2 = 0
+        if i[4] != None:
+            rf = i[4]
+        else:
+            rf = 0
+        if i[5] != None:
+            dg = i[5]
+        else:
+            dg = 0
+    
+        grid = i[0]-(wd+wh+wh2)
 
         if grid < 0:
             grid = 0
 
-        Total_RE = round(i[1]+i[2]+i[3]+i[4])
-        Total_fossil =round(grid+i[5])
+        Total_RE = round(wd+wh+wh2+rf)
+        Total_fossil = round(grid+dg)
 
         REPercentage = round((Total_RE/(Total_RE+Total_fossil))*100)
         FossilPercentage = round((Total_fossil/(Total_RE+Total_fossil))*100)
@@ -170,19 +192,41 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         month = value[5:]
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"""SELECT sum(gridEnergy),sum(windEnergy),sum(wheeledinEnergy),sum(wheeledinEnergy2),sum(rooftopEnergy),sum(deisel)
-                        FROM EMS.buidingConsumptionDayWise where month(polledDate) = '{month}' and year(polledDate) = '{year}';""")
+                bmscur.execute(f"""SELECT sum(gridEnergy),sum(windEnergy),sum(wheeledinEnergy),sum(wheeledinEnergy2),sum(rooftopEnergy),sum(diesel) 
+                        FROM EMS.buildingConsumption where 
+                        month(polledTime) = '{month}' and year(polledTime) = '{year}'""")
                 
                 res = bmscur.fetchall()
 
                 for i in res:
-                    grid = i[0]-(i[1]+i[2]+i[3])
+                    if i[1] != None:
+                        wd = i[1]
+                    else:
+                        wd = 0
+                    if i[2] != None:
+                        wh = i[2]
+                    else:
+                        wh = 0
+                    if i[3] != None:
+                        wh2 = i[3]
+                    else:
+                        wh2 = 0
+                    if i[4] != None:
+                        rf = i[4]
+                    else:
+                        rf = 0
+                    if i[5] != None:
+                        dg = i[5]
+                    else:
+                        dg = 0
+                
+                    grid = i[0]-(wd+wh+wh2)
 
                     if grid < 0:
                         grid = 0
 
-                    Total_RE = round(i[1]+i[2]+i[3]+i[4])
-                    Total_fossil = round(grid+i[5])
+                    Total_RE = round(wd+wh+wh2+rf)
+                    Total_fossil = round(grid+dg)
 
                     REPercentage = round((Total_RE/(Total_RE+Total_fossil))*100)
                     FossilPercentage = round((Total_fossil/(Total_RE+Total_fossil))*100)
@@ -197,8 +241,6 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
     return RenewableEnergyData
-
-
 
 @app.get('/Dashboard/TopTenClients')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):

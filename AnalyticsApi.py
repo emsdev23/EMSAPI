@@ -187,11 +187,11 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     
     emscur = ems_db.cursor()
 
-    emscur.execute("""select month(polledDate),c1Consumption,c2Consumption,c4Consumption,c5Consumption,
-            c1WheeledEnergy,c2WheeledEnergy,c4WheeledEnergy,c5WheeledEnergy,
-            c1WindEnergy,c2WindEnergy,c4WindEnergy,c5WindEnergy
-            from EMS.SlotWiseBillData where month(polledDate) = month(date_sub(curdate(),interval 30 day))
-            and year(polledDate) = year(curdate());""")
+    emscur.execute("""SELECT monthname(polledDate),c1Con,c2Con,c4Con,c5Con,
+                        c1Wheeled,c2Wheeled,c4Wheeled,c5Wheeled,
+                        c1Wind,c2Wind,c4Wind,c5Wind
+                    FROM EMS.slotWiseCalculation where month(polledDate) = month(curdate())
+                    and year(polledDate) = year(curdate());""")
     
     res = emscur.fetchall()
 
@@ -490,9 +490,9 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     awscur.execute("select year(polledDate),month(polledDate),Energy from EMS.windMonthWise order by polledDate desc limit 6;")
 
     res =  awscur.fetchall()
-
+    month = str(i[0])+"-"+str(i[1])+"-01"
     for i in res:
-        windEnergy.append({"Year":i[0],'Month':i[1],"Energy":i[2]})
+        windEnergy.append({'Month':month,"Energy":i[2]})
 
     return windEnergy
 
@@ -507,18 +507,18 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
                 awscur.execute(f"""select year(polledDate),month(polledDate),Energy from EMS.windMonthWise
                     where polledDate BETWEEN '{value1}' AND '{value2}';""")
                 res =  awscur.fetchall()
-
+                month = str(i[0])+"-"+str(i[1])+"-01"
                 for i in res:
-                    windEnergy.append({"Year":i[0],'Month':i[1],"Energy":i[2]})
+                    windEnergy.append({'Month':month,"Energy":i[2]})
         elif value1:
             with db.cursor() as awscur:
                 value2 = str(datetime.now())[0:10]
                 awscur.execute(f"""select year(polledDate),month(polledDate),Energy from EMS.windMonthWise
                     where polledDate BETWEEN '{value1}' AND '{value2}';""")
                 res =  awscur.fetchall()
-
+                month = str(i[0])+"-"+str(i[1])+"-01"
                 for i in res:
-                    windEnergy.append({"Year":i[0],'Month':i[1],"Energy":i[2]})
+                    windEnergy.append({'Month':month,"Energy":i[2]})
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
 
@@ -535,7 +535,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     
     awscur = aws_db.cursor()
 
-    awscur.execute("SELECT polledTime,round(sum(Energy),2) FROM EMS.windHourly where month(polledTime) = month(curdate());")
+    awscur.execute("SELECT polledDate,Energy FROM EMS.windMonthWise where month(polledDate) = month(curdate());;")
 
     res = awscur.fetchall()
 
@@ -555,7 +555,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     
     awscur = aws_db.cursor()
 
-    awscur.execute("SELECT polledTime,Energy FROM EMS.windHourly where date(polledTime) = curdate();")
+    awscur.execute("SELECT polledTime,Energy FROM EMS.windEnergyHourly where date(polledTime) = curdate();")
 
     res = awscur.fetchall()
 
@@ -577,7 +577,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
         value = data.get('date')
         if value and isinstance(value, str):
             with db.cursor() as awscur:
-                awscur.execute(f"SELECT polledTime,Energy FROM EMS.windHourly where date(polledTime) = '{value}';")
+                awscur.execute(f"SELECT polledTime,Energy FROM EMS.windEnergyHourly where date(polledTime) = '{value}';")
 
                 res = awscur.fetchall()
 
