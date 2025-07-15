@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import mysql.connector
 from fastapi.responses import JSONResponse
 import psycopg2
-import json
 
 app = FastAPI()
 
@@ -12,12 +11,6 @@ origins = [
     # Add more origins as needed
 ]
 
-file_path = "/home/tenet/ems/py_script/db_creds.json"
-
-with open(file_path, 'r') as file:
-    data = json.load(file)
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -25,6 +18,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+file_path = "/home/tenet/ems/Creds/db_creds.json"
+
+with open(file_path, 'r') as file:
+    data = json.load(file)
 
 def get_emsdb():
     db = mysql.connector.connect(
@@ -48,11 +46,10 @@ def get_awsdb():
 
 def get_cpm_2():
     db = psycopg2.connect(
-            host=data["cmp2"]["host"],
-            database=data["cmp2"]["database"],
-            user=data["cmp2"]["user"],
-            password=data["cmp2"]["password"]
-            )
+            host="10.9.200.203",
+            database="cpm_phase_2",
+            user="rpuser",
+            password="parkPassword")
     
     return db
 
@@ -63,6 +60,7 @@ API_mapping = {
     '4': 'http://localhost:8009/ioefourstr',
     '5': 'http://localhost:8009/ioefivestr',
 }
+
 
 
 @app.get('/ExcessRE/Details')
@@ -76,11 +74,12 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
    
     ems_cur = processed_db.cursor()
 
-    ems_cur.execute("SELECT polledTime,ExcessRE,Duration,Stored_in,DeficitRE FROM EMS.ExcessREcard where date(polledTime)=curdate()")
+    ems_cur.execute("""SELECT 
+                    polledTime,sum(ExcessRE),sum(Duration),sum(IOE_Stored_in),
+                    sum(LTO_Stored_in),sum(Cold_Stored_in),sum(DeficitRE)
+                    FROM EMS.ExcessREcard where date(polledTime)=curdate()""")
    
     res = ems_cur.fetchall()
-
-    # print(res)
 
     for i in res:
         polledTime = str(i[0])[11:19]
@@ -94,385 +93,262 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
             Duration=round(i[2],2)
 
         if(i[3]==None):
-            Stored_in=0
+            IOE_Stored_in=0
         else:
-            Stored_in=round(i[3],2)
-
+            IOE_Stored_in=round(i[3],2)
         if(i[4]==None):
+            LTO_Stored_in=0
+        else:
+           LTO_Stored_in=round(i[4],2)
+        if(i[5]==None):
+            Cold_Stored_in=0
+        else:
+           Cold_Stored_in=round(i[5],2)
+
+        if(i[6]==None):
             DeficitRE=0
         else:
-            DeficitRE=(round(i[4],2)*-1)
+            DeficitRE=(round(i[6],2)*-1)
 
-        ExcessREData.append({'polledTime':polledTime,"ExcessRE":ExcessRE,"Duration":Duration,"Stored_in":Stored_in,"DeficitRE":DeficitRE})
+        ExcessREData.append({'polledTime':polledTime,"ExcessRE":ExcessRE,"Duration":Duration,"IOE_Stored_in":IOE_Stored_in,"LTO_Stored_in":LTO_Stored_in,"Cold_Stored_in":Cold_Stored_in,"DeficitRE":DeficitRE})
     
     return ExcessREData
 
 
-@app.post('/control/hourlyDetails/Filtered')
+@app.post('/ExcessRE/Details/Filtered')
 def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
-    hourlyLi = []
+
+    ExcessREData=[]
 
     try:
         value = data.get('date')
 
-        if value:
-            with db.cursor() as awscur:
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"""SELECT 
+                        polledTime,sum(ExcessRE),sum(Duration),sum(IOE_Stored_in),
+                        sum(LTO_Stored_in),sum(Cold_Stored_in),sum(DeficitRE)
+                        FROM EMS.ExcessREcard where date(polledTime) = '{value}'""")
 
-                awscur.execute(f"""select polledTime,gridEnergy,rooftopEnergy,wheeledinEnergy,wheeledinEnergy2,windEnergy,diesel,peakDemand 
-                   from EMS.buildingConsumption where date(polledTime) = '{value}';""")
-    
-                res = awscur.fetchall()
-                hourlyLi = []
+                res = bmscur.fetchall()
 
-                if len(res) > 0:
-                    for i in res:
-                        if i[0] != None:
-                            polledTime = str(i[0])[11:16]
-                        
-                        if i[1] != None:
-                            grid = round(i[1],1)
-                        else:
-                            grid = 0
-                        
-                        if i[2] != None:
-                            roof = round(i[2],1)
-                        else:
-                            roof = 0
-
-                        if i[3] != None:
-                            wheel = round(i[3],1)
-                        else:
-                            wheel = 0
-                        
-                        if i[4] != None:
-                            wheel2 = round(i[4],1)
-                        else:
-                            wheel2 = 0
-                        
-                        if i[5] != None:
-                            wind = round(i[5],1)
-                        else:
-                            wind = 0
-                        
-                        if i[6] != None:
-                            diesel = round(i[6],1)
-                        else:
-                            diesel = 0
-
-                        if i[7] != None:
-                            peak = round(i[7],1)
-                        else:
-                            peak = 0
-
-                        excess = round((wheel+wheel2+wind+roof) - (grid+diesel),1)
-
-                        totalEnergy = round(grid+roof+diesel,1)
-                        
-                        if grid > (wheel+wheel2+wind):
-                            grid = (grid+diesel) - (wheel+wheel2+wind)
-                        else:
-                            grid = 0
-
-                        if excess < 0:
-                            excess = 0
-
-                        totalGrid = round(grid + diesel,1)
-                        totalRE = round(wheel+wheel2+wind+roof,1)
-
-                        hourlyLi.append({'polledTime':polledTime,'power':peak,'grid':totalGrid,'RE':totalRE,'excessRE':excess,'totalEnergy':totalEnergy})
-
-                awscur.execute(f"SELECT polledTime,discharhingEnergy FROM EMS.UPSbatteryHourly where date(polledTime) = '{value}';")
-
-                upsRes = awscur.fetchall()
-
-                upsLi = []
-
-                for i in upsRes:
-                    polledTime = str(i[0])[11:16]
-                    if i[1]!= None:
-                        ups = round(i[1],1)
+                for i in res:
+                    polledTime = str(i[0])[11:19]
+                    if(i[1]==None):
+                        ExcessRE=0
                     else:
-                        ups = 0
-                    upsLi.append({"polledTime":polledTime,"UPS":abs(ups)})
-
-                for entry in hourlyLi:
-                    for battery in upsLi:
-                        if entry['polledTime'] == battery['polledTime']:
-                            entry['UPS'] = battery['UPS']
-
-                awscur.execute(f"SELECT polledTime,dischargingEnergy FROM EMS.LTObatteryHourly where date(polledTime) = '{value}';")
-
-                ltoRes = awscur.fetchall()
-
-                ltoLi = []
-
-                for i in ltoRes:
-                    polledTime = str(i[0])[11:16]
-                    if i[1] != None:
-                        lto = round(i[1],1)
+                        ExcessRE=round(i[1],2)
+                    if(i[2]==None):
+                        Duration=0
                     else:
-                        lto = 0
-                    ltoLi.append({'polledTime':polledTime,'lto':abs(lto)})
+                     Duration=round(i[2],2)
 
-                for entry in hourlyLi:
-                    for battery in ltoLi:
-                        if entry['polledTime'] == battery['polledTime']:
-                            entry['lto'] = battery['lto']  
+                    if(i[3]==None):
+                        IOE_Stored_in=0
+                    else:
+                        IOE_Stored_in=round(i[3],2)
+
+                    if(i[4]==None):
+                        LTO_Stored_in=0
+                    else:
+                        LTO_Stored_in=round(i[4],2)
+
+                    if(i[5]==None):
+                        Cold_Stored_in=0
+                    else:
+                        Cold_Stored_in=round(i[5],2)
+
+                    if(i[6]==None):
+                        DeficitRE=0
+                    else:
+                        DeficitRE=(round(i[6],2)*-1)
+
+                    ExcessREData.append({'polledTime':polledTime,"ExcessRE":ExcessRE,"Duration":Duration,"IOE_Stored_in":IOE_Stored_in,"LTO_Stored_in":LTO_Stored_in, "Cold_Stored_in":Cold_Stored_in,"DeficitRE":DeficitRE})
                 
-                awscur.execute(f"""SELECT polledTime,st1dischargingEnergy,st2dischargingEnergy,st3dischargingEnergy,st4dischargingEnergy,st5dischargingEnergy
-                        FROM EMS.IOEbatteryHourly where date(polledTime) = '{value}';""")
-                
-                ioeRes = awscur.fetchall()
-                ioeLi = []
-
-                for i in ioeRes:
-                    polledTime = str(i[0])[11:16]
-                    if i[1] != None:
-                        str1 = i[1]
-                    else:
-                        str1 = 0
-                    if i[2] != None:
-                        str2 = i[2]
-                    else:
-                        str2 = 0
-                    if i[3] != None:
-                        str3 = i[3]
-                    else:
-                        str3 = 0
-                    if i[4] != None:
-                        str4 = i[4]
-                    else:
-                        str4 = 0
-                    if i[5] != None:
-                        str5 = i[5]
-                    else:
-                        str5 = 0
-                    
-                    ioeStr = str1+str2+str3+str4+str5
-                    ioeLi.append({'polledTime':polledTime,'ioe':abs(ioeStr)})
-                
-                for entry in hourlyLi:
-                    for battery in ioeLi:
-                        if entry['polledTime'] == battery['polledTime']:
-                            entry['ioe'] = battery['ioe']  
-
-                for entry in hourlyLi:
-                    try:
-                        ioe = entry['ioe']
-                        del entry['ioe']
-                    except Exception as ex:
-                        ioe = 0
-
-                    try:
-                        lto = entry['lto']
-                        del entry['lto']
-                    except Exception as ex:
-                        lto = 0
-
-                    try:
-                        ups = entry['ups']
-                        del entry['ups']
-                    except Exception as ex:
-                        ups = 0
-
-                    entry['battery'] = round(ioe+lto+ups,1)
-
+        
+        return ExcessREData
     except mysql.connector.Error as e:
-        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
-    return hourlyLi
+@app.get('/PeakTariff/Details')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+
+    PeakTariffData=[]
+    try:
+        processed_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    ems_cur = processed_db.cursor()
+
+    ems_cur.execute("SELECT polledTime,IOE_Discharged,LTO_Discharged,Cold_Discharged FROM EMS.PeakTariffCard where date(polledTime)=curdate();")
+   
+    res = ems_cur.fetchall()
+
+    # print(res)
+
+    for i in res:
+        polledTime = str(i[0])[11:19]
+        if(i[1]==None):
+            IOE_Discharge=0
+        else:
+            IOE_Discharge=(round(i[1],2)*-1)
+        if(i[2]==None):
+            LTO_Discharge=0
+        else:
+            LTO_Discharge=round(i[2],2)*-1
+
+        if(i[3]==None):
+            Cold_Discharge=0
+        else:
+            Cold_Discharge=round(i[3],2)
+
+        PeakTariffData.append({'polledTime':polledTime,"IOE_Discharge":IOE_Discharge,"LTO_Discharge":LTO_Discharge,"Cold_Discharge":Cold_Discharge})
+    
+    return PeakTariffData
+
+
+
+
+
+@app.post('/PeakTariff/Details/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+
+    PeakTariffData=[]
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT polledTime,IOE_Discharged,LTO_Discharged,Cold_Discharged FROM EMS.PeakTariffCard where date(polledTime) = '{value}'")
+
+                res = bmscur.fetchall()
+
+        for i in res:
+            polledTime = str(i[0])[11:19]
+            if(i[1]==None):
+                IOE_Discharge=0
+            else:
+               IOE_Discharge=(round(i[1],2)*-1)
+            if(i[2]==None):
+              LTO_Discharge=0
+            else:
+              LTO_Discharge=round(i[2],2)*-1
+
+            if(i[3]==None):
+               Cold_Discharge=0
+            else:
+               Cold_Discharge=round(i[3],2)
+
+            PeakTariffData.append({'polledTime':polledTime,"IOE_Discharge":IOE_Discharge,"LTO_Discharge":LTO_Discharge,"Cold_Discharge":Cold_Discharge})
+                
+        
+        return PeakTariffData
+    except mysql.connector.Error as e:
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+
+@app.post('/control/hourlyDetails/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+
+    hourlyDetailsGraph=[]
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT polledTime,ExcessRE,DeficitRE,Battery_storage,Total_energy,peak_demand FROM EMS.ExcessREhourly  where date(polledTime) = '{value}'")
+
+                res = bmscur.fetchall()
+
+        for i in res:
+            polledTime = str(i[0])[11:16]
+            if(i[1]==None):
+                ExcessRE=0
+            else:
+               ExcessRE=(round(i[1],2))
+            if(i[2]==None):
+               DeficitRE=0
+            else:
+               DeficitRE=round(i[2],2)
+
+            if(i[3]==None):
+               Battery_storage=0
+            else:
+               Battery_storage=(round(i[3],2)*-1)
+            if(i[4]==None):
+               Total_energy=0
+            else:
+               Total_energy=round(i[4],2)
+            if(i[5]==None):
+               peak_demand=0
+            else:
+               peak_demand=round(i[5],2)
+ 
+
+            hourlyDetailsGraph.append({'polledTime':polledTime,"excessRE":ExcessRE,"power":peak_demand,"DeficitRE":DeficitRE,"totalEnergy":Total_energy,"battery":Battery_storage})
+                
+        
+        return hourlyDetailsGraph
+    except mysql.connector.Error as e:
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+   
+                
+               
+
 
 @app.get('/control/hourlyDetails')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
-    hourlyLi = []
+
+    hourlyDetailsGraph=[]
     try:
-        awsdb = get_awsdb()
+        processed_db = get_awsdb()
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
-    
-    awscur = awsdb.cursor()
+   
+    ems_cur = processed_db.cursor()
 
-    awscur.execute("""select polledTime,gridEnergy,rooftopEnergy,wheeledinEnergy,wheeledinEnergy2,windEnergy,diesel,peakDemand 
-                   from EMS.buildingConsumption where date(polledTime) = curdate();""")
-    
-    res = awscur.fetchall()
-    hourlyLi = []
+    ems_cur.execute("SELECT polledTime,ExcessRE,DeficitRE,Battery_storage,Total_energy,peak_demand FROM EMS.ExcessREhourly  where date(polledTime)=curdate();")
+   
+    res = ems_cur.fetchall()
 
-    if len(res) > 0:
-        for i in res:
-            if i[0] != None:
-                polledTime = str(i[0])[11:16]
-            
-            if i[1] != None:
-                grid = round(i[1],1)
-            else:
-                grid = 0
-            
-            if i[2] != None:
-                roof = round(i[2],1)
-            else:
-                roof = 0
-
-            if i[3] != None:
-                wheel = round(i[3],1)
-            else:
-                wheel = 0
-            
-            if i[4] != None:
-                wheel2 = round(i[4],1)
-            else:
-                wheel2 = 0
-            
-            if i[5] != None:
-                wind = round(i[5],1)
-            else:
-                wind = 0
-            
-            if i[6] != None:
-                diesel = round(i[6],1)
-            else:
-                diesel = 0
-
-            if i[7] != None:
-                peak = round(i[7],1)
-            else:
-                peak = 0
-
-            excess = round((wheel+wheel2+wind+roof) - (grid+diesel),1)
-
-            totalEnergy = round(grid+roof+diesel,1)
-            
-            if grid > (wheel+wheel2+wind):
-                grid = (grid+diesel) - (wheel+wheel2+wind)
-            else:
-                grid = 0
-
-            if excess < 0:
-                excess = 0
-
-            totalGrid = round(grid + diesel,1)
-            totalRE = round(wheel+wheel2+wind+roof,1)
-
-            hourlyLi.append({'polledTime':polledTime,'power':peak,'grid':totalGrid,'RE':totalRE,'excessRE':excess,'totalEnergy':totalEnergy})
-
-    awscur.execute("SELECT polledTime,discharhingEnergy FROM EMS.UPSbatteryHourly where date(polledTime) = curdate();")
-
-    upsRes = awscur.fetchall()
-
-    upsLi = []
-
-    for i in upsRes:
-        polledTime = str(i[0])[11:16]
-        if i[1]!= None:
-            ups = round(i[1],1)
-        else:
-            ups = 0
-        upsLi.append({"polledTime":polledTime,"UPS":abs(ups)})
-
-    for entry in hourlyLi:
-        for battery in upsLi:
-            if entry['polledTime'] == battery['polledTime']:
-                entry['UPS'] = battery['UPS']
-
-    awscur.execute("SELECT polledTime,dischargingEnergy FROM EMS.LTObatteryHourly where date(polledTime) = curdate();")
-
-    ltoRes = awscur.fetchall()
-
-    ltoLi = []
-
-    for i in ltoRes:
-        polledTime = str(i[0])[11:16]
-        if i[1] != None:
-            lto = round(i[1],1)
-        else:
-            lto = 0
-        ltoLi.append({'polledTime':polledTime,'lto':abs(lto)})
-
-    for entry in hourlyLi:
-        for battery in ltoLi:
-            if entry['polledTime'] == battery['polledTime']:
-                entry['lto'] = battery['lto']  
-    
-    awscur.execute("""SELECT polledTime,st1dischargingEnergy,st2dischargingEnergy,st3dischargingEnergy,st4dischargingEnergy,st5dischargingEnergy
-            FROM EMS.IOEbatteryHourly where date(polledTime) = curdate();""")
-    
-    ioeRes = awscur.fetchall()
-    ioeLi = []
-
-    for i in ioeRes:
-        polledTime = str(i[0])[11:16]
-        if i[1] != None:
-            str1 = i[1]
-        else:
-            str1 = 0
-        if i[2] != None:
-            str2 = i[2]
-        else:
-            str2 = 0
-        if i[3] != None:
-            str3 = i[3]
-        else:
-            str3 = 0
-        if i[4] != None:
-            str4 = i[4]
-        else:
-            str4 = 0
-        if i[5] != None:
-            str5 = i[5]
-        else:
-            str5 = 0
-        
-        ioeStr = str1+str2+str3+str4+str5
-        ioeLi.append({'polledTime':polledTime,'ioe':abs(ioeStr)})
-    
-    for entry in hourlyLi:
-        for battery in ioeLi:
-            if entry['polledTime'] == battery['polledTime']:
-                entry['ioe'] = battery['ioe']  
-
-    for entry in hourlyLi:
-        try:
-            ioe = entry['ioe']
-            del entry['ioe']
-        except Exception as ex:
-            ioe = 0
-
-        try:
-            lto = entry['lto']
-            del entry['lto']
-        except Exception as ex:
-            lto = 0
-
-        try:
-            ups = entry['ups']
-            del entry['ups']
-        except Exception as ex:
-            ups = 0
-
-        entry['battery'] = round(ioe+lto+ups,1)
-
-    return hourlyLi
-
-@app.get('/control/UpsDetails')
-def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
-    Ups_list = []
-    
-    try:
-        emsdb = get_emsdb()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
-    
-    emscur = emsdb.cursor()
-
-    emscur.execute("SELECT pack_usable_soc,upsbatterystatus,batteryvoltage,batterycurrent,contactorstatus,precontactorstatus FROM EMS.EMSUPSBattery where date(received_time) = curdate() order by upsrecordid desc limit 1;")
-
-    res = emscur.fetchall()
+    # print(res)
 
     for i in res:
-        Ups_list.append({'packSOC':i[0],'batteryStatus':i[1],'batteryVoltage':i[2],'batteryCurrent':i[3],
-                         'mainConStatus':i[4],'preConStatus':i[5]})
+        polledTime = str(i[0])[11:16]
+        if(i[1]==None):
+            ExcessRE=0
+        else:
+            ExcessRE=(round(i[1],2))
+        if(i[2]==None):
+            DeficitRE=0
+        else:
+            DeficitRE=round(i[2],2)
+
+        if(i[3]==None):
+            Battery_storage=0
+        else:
+            Battery_storage=(round(i[3],2)*-1)
+        if(i[4]==None):
+            Total_energy=0
+        else:
+            Total_energy=round(i[4],2)
+        if(i[5]==None):
+            peak_demand=0
+        else:
+            peak_demand=round(i[5],2)
+
+        hourlyDetailsGraph.append({'polledTime':polledTime,"excessRE":ExcessRE,"power":peak_demand,"DeficitRE":DeficitRE,"totalEnergy":Total_energy,"battery":Battery_storage})
     
-    return Ups_list
+    return hourlyDetailsGraph
+          
+            
+
 
 @app.get("/control/ioeDetails")
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
@@ -595,9 +471,112 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     return Ioe_list
 
+@app.get("/control/cellDetails")
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    Ioe_list = []
+    Ioe_dict = {}
+
+    try:
+        emsdb = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = emsdb.cursor()
+
+    emscur.execute("""SELECT maxVoltage,minVoltage,maxcellNo,mincellNo FROM EMS.ioest1cell where polledTime >= curdate() order by polledTime desc limit 1;""")
+
+    cellres1 = emscur.fetchall()
+
+    if len(cellres1) > 0:
+        Ioe_dict['maxVoltage1'] = cellres1[0][0]
+        Ioe_dict['minVoltage1'] = cellres1[0][1]
+        Ioe_dict['maxCell1'] = cellres1[0][2]
+        Ioe_dict['minCell1'] = cellres1[0][3]
+    else:
+        Ioe_dict['maxVoltage1'] = None
+        Ioe_dict['minVoltage1'] = None
+        Ioe_dict['maxCell1'] = None
+        Ioe_dict['minCell1'] = None
+    
+
+    emscur.execute("""SELECT maxVoltage,minVoltage,maxcellNo,mincellNo FROM EMS.ioest2cell where polledTime >= curdate() order by polledTime desc limit 1;""")
+
+    cellres2 = emscur.fetchall()
+
+    if len(cellres2) > 0:
+        Ioe_dict['maxVoltage2'] = cellres2[0][0]
+        Ioe_dict['minVoltage2'] = cellres2[0][1]
+        Ioe_dict['maxCell2'] = cellres2[0][2]
+        Ioe_dict['minCell2'] = cellres2[0][3]
+
+    else:
+        Ioe_dict['maxVoltage2'] = None
+        Ioe_dict['minVoltage2'] = None
+        Ioe_dict['maxCell2'] = None
+        Ioe_dict['minCell2'] = None
+    
+
+    emscur.execute("""SELECT maxVoltage,minVoltage,maxcellNo,mincellNo FROM EMS.ioest3cell where polledTime >= curdate() order by polledTime desc limit 1;""")
+
+    cellres3 = emscur.fetchall()
+
+    if len(cellres3) > 0:
+        Ioe_dict['maxVoltage3'] = cellres3[0][0]
+        Ioe_dict['minVoltage3'] = cellres3[0][1]
+        Ioe_dict['maxCell3'] = cellres3[0][2]
+        Ioe_dict['minCell3'] = cellres3[0][3]
+
+    else:
+        Ioe_dict['maxVoltage3'] = None
+        Ioe_dict['minVoltage3'] = None
+        Ioe_dict['maxCell3'] = None
+        Ioe_dict['minCell3'] = None
+    
+
+    emscur.execute("""SELECT maxVoltage,minVoltage,maxcellNo,mincellNo FROM EMS.ioest4cell where polledTime >= curdate() order by polledTime desc limit 1;""")
+
+    cellres4 = emscur.fetchall()
+
+    if len(cellres4) >0 :
+        Ioe_dict['maxVoltage4'] = cellres4[0][0]
+        Ioe_dict['minVoltage4'] = cellres4[0][1]
+        Ioe_dict['maxCell4'] = cellres4[0][2]
+        Ioe_dict['minCell4'] = cellres4[0][3]
+
+    else:
+        Ioe_dict['maxVoltage4'] = None
+        Ioe_dict['minVoltage4'] = None
+        Ioe_dict['maxCell4'] = None
+        Ioe_dict['minCell4'] = None
+
+    emscur.execute("""SELECT maxVoltage,minVoltage,maxcellNo,mincellNo FROM EMS.ioest5cell where polledTime >= curdate() order by polledTime desc limit 1;""")
+
+    cellres5 = emscur.fetchall()
+
+    if len(cellres5) > 0:
+        Ioe_dict['maxVoltage5'] = cellres5[0][0]
+        Ioe_dict['minVoltage5'] = cellres5[0][1]
+        Ioe_dict['maxCell5'] = cellres5[0][2]
+        Ioe_dict['minCell5'] = cellres5[0][3]
+
+    else:
+        Ioe_dict['maxVoltage5'] = None
+        Ioe_dict['minVoltage5'] = None
+        Ioe_dict['maxCell5'] = None
+        Ioe_dict['minCell5'] = None
+
+    emscur.close()
+    
+    Ioe_list.append(Ioe_dict)
+
+    return Ioe_list
+
+
+
 @app.post('/control/ioeControl')
 def ioeControl(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
     try:
+        print(data)
         polledTime = data.get('polledTime')
         functionCode = data.get('functionCode')
         controlStatus = data.get('controlStatus')
@@ -606,6 +585,8 @@ def ioeControl(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
 
         for i in strings:
             print(i)
+
+        functionCode = functionCode.upper()
 
         if functionCode == "OFF":
                 ApiUrl = 'http://localhost:8009/ioeprocessoff'
@@ -633,11 +614,33 @@ def ioeControl(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
                 bms_cur.execute(sql,val)
                 db.commit()
                 return "Parameter Added Sucessfully"
-            
         else:
             return "Parameters not available"
     except mysql.connector.Error as e:
+        print(e)
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+
+@app.get('/control/UpsDetails')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    Ups_list = []
+    
+    try:
+        emsdb = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = emsdb.cursor()
+
+    emscur.execute("SELECT pack_usable_soc,upsbatterystatus,batteryvoltage,batterycurrent,contactorstatus,precontactorstatus FROM EMS.EMSUPSBattery where date(received_time) = curdate() order by upsrecordid desc limit 1;")
+
+    res = emscur.fetchall()
+
+    for i in res:
+        Ups_list.append({'packSOC':i[0],'batteryStatus':i[1],'batteryVoltage':i[2],'batteryCurrent':i[3],
+                         'mainConStatus':i[4],'preConStatus':i[5]})
+    
+    return Ups_list
 
 
 @app.post('/control/HotwaterStorage')

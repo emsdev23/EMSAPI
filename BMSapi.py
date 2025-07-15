@@ -2,9 +2,13 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import mysql.connector
 from fastapi.responses import JSONResponse
-import pytz
-from datetime import datetime
 import json
+from cachetools import TTLCache
+from datetime import datetime
+import time
+
+# Cache that holds 1 item, expires in 300 seconds (5 mins)
+bms_cache = TTLCache(maxsize=1, ttl=300)
 
 app = FastAPI()
 
@@ -21,7 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-file_path = "/home/tenet/ems/py_script/db_creds.json"
+file_path = "/home/tenet/ems/Creds/db_creds.json"
 
 with open(file_path, 'r') as file:
     data = json.load(file)
@@ -38,10 +42,10 @@ def get_emsdb():
 
 def get_bmsdb():
     db=mysql.connector.connect(
-        host=data['bmsDB']['host'],
-        user=data['bmsDB']['user'],
-        password=data['bmsDB']['password'],
-        port=data['bmsDB']['port']
+        host=data['bmsDB1']['host'],
+        user=data['bmsDB1']['user'],
+        password=data['bmsDB1']['password'],
+        port=data['bmsDB1']['port']
     )
     return db
 
@@ -54,6 +58,7 @@ def custom_round(number):
         return ((number // 100) + 1) * 100
 
 windSpeed = {
+    0   :0,
     3   :4.8,
     3.5 :49.8,
     4   :132,
@@ -123,9 +128,175 @@ def getNacelleDir(angle):
     return dir     
 
 
+@app.get('/thermaltemp')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
+
+    if 'thermaltemp' in  bms_cache:
+        print("from cache")
+        return bms_cache['thermaltemp']
+    
+    print("Thermal temp from database")
+    try:
+        processed_db = get_bmsdb()
+        ems_cur = processed_db.cursor()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+
+    ems_cur.execute("""SELECT tsStoredWaterTemperature/100 FROM bmsmgmtprodv13.thermalStorageMQTTReadings 
+                        where date(polledTime) = curdate() order by polledTime desc limit 1;""")
+    res1 = ems_cur.fetchall()
+
+    if len(res1) > 0:
+        thermalTemp = res1[0][0]
+    else:
+        thermalTemp = 0
+    
+    bms_cache['thermaltemp'] = thermalTemp
+
+    return thermalTemp
+
+
+@app.get('/wind/currentData')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
+    windJson = {}
+    windscatter = []
+    windPower = []
+    windParam = []
+    windExp = []
+    if 'wind_data' in bms_cache:
+        print("Returning cached data")
+        return bms_cache['wind_data']
+    
+    print("Getting data from DB")
+
+    try:
+        processed_db = get_bmsdb()
+        ems_cur = processed_db.cursor()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    ems_cur.execute("""SELECT otpmgndetailsactivepower,otpmgndetailswindspeed,from_unixtime(otpmgndetailspolledtimestamp)
+                        FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = curdate()
+                        and otpmgndetailswindspeed > 0;""")
+    res1 = ems_cur.fetchall()
+
+    for i in res1:
+        windscatter.append({'power':i[0],'windspeed':i[1]})
+
+    for i in res1:
+        polledTime = str(i[2])[11:16]
+        if i[0] != None and i[0] >= 0:
+            windPower.append({"polledTime":polledTime,"activePower":i[0]*60,"windSpeed":i[1]})
+        else:
+            windPower.append({"polledTime":polledTime,"activePower":0,"windSpeed":i[1]})
+    
+    ems_cur.execute("""SELECT otpmgndetailswindspeed,otpmgndetailsnacelledirection,otpmgndetailsambienttemp,round(otpmgndetailsgenspeed,1),
+                        round(otpmgndetailsrotorspeed,1) FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = curdate() 
+                        order by otpmgndetailspolledtimestamp desc limit 1;""")
+    
+    res2 = ems_cur.fetchall()
+
+    if len(res2) > 0:
+        for i in res2:
+            nacelleDir = getNacelleDir(i[1])
+            windParam.append({"windSpeed":i[0],"temperature":i[2],"rotorSpeed":i[4],"genSpeed":i[3],
+                             "nacelleDirection":nacelleDir})
+            
+    ems_cur.execute("""SELECT round(avg(otpmgndetailsactivepower)) as power, round(avg(otpmgndetailswindspeed)) 
+                        FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = curdate() 
+                        and otpmgndetailsactivepower > 0 order by otpmgndetailspolledtimestamp;""")
+    
+    res3 = ems_cur.fetchall()
+
+    for i in res3:
+        speed = wind_round(i[1])
+        expected = windSpeed[speed]
+        windExp.append({"expectedSpeed":20,"windSpeed":i[1],"averagePower":i[0],"expexctedPower":expected})
+
+    windJson['windScatterplot'] = windscatter
+    windJson['windParameters'] = windParam
+    windJson['windExpected'] = windExp
+    windJson['windPower'] = windPower
+
+    ems_cur.close()
+
+    bms_cache['wind_data'] = windJson
+
+    return windJson
+
+@app.post('/wind/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
+    windJson = {}
+    windscatter = []
+    windPower = []
+    windParam = []
+    windExp = []
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bms_cur:
+                bms_cur.execute(f"""SELECT otpmgndetailsactivepower,otpmgndetailswindspeed,from_unixtime(otpmgndetailspolledtimestamp)
+                                    FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = '{value}'
+                                    and otpmgndetailswindspeed > 0;""")
+                
+                res1 = bms_cur.fetchall()
+
+                for i in res1:
+                    windscatter.append({'power':i[0],'windspeed':i[1]})
+                
+                for i in res1:
+                    polledTime = str(i[2])[11:16]
+                    if i[0] != None and i[0] >= 0:
+                        windPower.append({"polledTime":polledTime,"activePower":i[0]*60,"windSpeed":i[1]})
+                    else:
+                        windPower.append({"polledTime":polledTime,"activePower":0,"windSpeed":i[1]})
+                
+                bms_cur.execute("""SELECT otpmgndetailswindspeed,otpmgndetailsnacelledirection,otpmgndetailsambienttemp,round(otpmgndetailsgenspeed,1),
+                        round(otpmgndetailsrotorspeed,1) FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = curdate() 
+                        order by otpmgndetailspolledtimestamp desc limit 1;""")
+    
+                res2 = bms_cur.fetchall()
+
+                if len(res2) > 0:
+                    for i in res2:
+                        nacelleDir = getNacelleDir(i[1])
+                        windParam.append({"windSpeed":i[0],"temperature":i[2],"rotorSpeed":i[4],"genSpeed":i[3],
+                                        "nacelleDirection":nacelleDir})
+                        
+                bms_cur.execute(f"""SELECT round(avg(otpmgndetailsactivepower)) as power, round(avg(otpmgndetailswindspeed)) 
+                        FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = '{value}' 
+                        and otpmgndetailsactivepower > 0 order by otpmgndetailspolledtimestamp;""")
+    
+                res = bms_cur.fetchall()
+
+                for i in res:
+                    speed = wind_round(i[1])
+                    expected = windSpeed[speed]
+                    windExp.append({"expectedSpeed":20,"windSpeed":i[1],"averagePower":i[0],"expexctedPower":expected})
+                
+                windJson['windScatterplot'] = windscatter
+                windJson['windParameters'] = windParam
+                windJson['windExpected'] = windExp
+                windJson['windPower'] = windPower
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+    
+    return windJson
+
+
+
 @app.get('/wind/powerVSspeedScatter')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
     windList = []
+
+    if 'windspeedvspower' in bms_cache:
+        print("from cache")
+        return bms_cache['windspeedvspower']
+    
+    print("wind speed vs power from DB")
+
     try:
         processed_db = get_bmsdb()
         ems_cur = processed_db.cursor()
@@ -134,12 +305,14 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
 
     ems_cur.execute("""SELECT otpmgndetailsactivepower,otpmgndetailswindspeed,from_unixtime(otpmgndetailspolledtimestamp)
                         FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = curdate()
-                        and otpmgndetailswindspeed > 3;""")
+                        and otpmgndetailswindspeed > 0;""")
     
     res = ems_cur.fetchall()
 
     for i in res:
         windList.append({'power':i[0],'windspeed':i[1]})
+
+    bms_cache['windspeedvspower'] = windList
 
     return windList
 
@@ -154,7 +327,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
             with db.cursor() as bms_cur:
                 bms_cur.execute(f"""SELECT otpmgndetailsactivepower,otpmgndetailswindspeed,from_unixtime(otpmgndetailspolledtimestamp)
                                     FROM bmsmgmtprodv13.otpmgndetails where date(from_unixtime(otpmgndetailspolledtimestamp)) = '{value}'
-                                    and otpmgndetailswindspeed > 3;""")
+                                    and otpmgndetailswindspeed > 0;""")
                 
                 res = bms_cur.fetchall()
 
@@ -169,6 +342,9 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
 @app.get('/wind/parameters')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
     windList = []
+    if 'windparam' in bms_cache:
+        print("from cache")
+        return bms_cache['windparam']
     try:
         processed_db = get_bmsdb()
         ems_cur = processed_db.cursor()
@@ -187,11 +363,17 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
             windList.append({"windSpeed":i[0],"temperature":i[2],"rotorSpeed":i[4],"genSpeed":i[3],
                              "nacelleDirection":nacelleDir})
 
+    bms_cache['windparam'] = windList
     return windList
 
 
 @app.get('/wind/expVSact')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
+    if 'windExpvsAct' in bms_cache:
+        print("from cache")
+        return bms_cache['windExpvsAct']
+    
+    print("from DB")
     windList = []
     try:
         processed_db = get_bmsdb()
@@ -210,13 +392,14 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
         expected = windSpeed[speed]
         windList.append({"expectedSpeed":20,"windSpeed":i[1],"averagePower":i[0],"expexctedPower":expected})
     
+    bms_cache['windExpvsAct'] = windList
+
     return windList
 
 
 @app.post('/wind/expVSact/Filtered')
 def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
     windList = []
-
     try:
         value = data.get('date')
 
@@ -240,6 +423,9 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
 
 @app.get('/wind/speedVSpower')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
+    if 'windSpeedvsPower' in bms_cache:
+        print("from cache")
+        return bms_cache['windSpeedvsPower']
     windList = []
     try:
         processed_db = get_bmsdb()
@@ -247,7 +433,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
     
-    ems_cur.execute("""SELECT round(otpmgndetailsactivepower*0.60,2) as power, otpmgndetailswindspeed,
+    ems_cur.execute("""SELECT otpmgndetailsactivepower*0.60 as power, otpmgndetailswindspeed,
                     from_unixtime(otpmgndetailspolledtimestamp) FROM bmsmgmtprodv13.otpmgndetails
                     where date(from_unixtime(otpmgndetailspolledtimestamp)) = curdate() order by otpmgndetailspolledtimestamp;""")
     
@@ -257,13 +443,16 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
         polledTime = str(i[2])[11:16]
         if i[0] != None and i[0] >= 0:
             windList.append({"polledTime":polledTime,"activePower":i[0],"windSpeed":i[1]})
+        else:
+            windList.append({"polledTime":polledTime,"activePower":0,"windSpeed":i[1]})
+
+    bms_cache['windSpeedvsPower'] = windList
 
     return windList
 
 @app.post('/wind/speedVSpower/Filtered')
 def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
     windList = []
-
     try:
         value = data.get('date')
 
@@ -279,6 +468,8 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
                     polledTime = str(i[2])[11:16]
                     if i[0] != None and i[0] >= 0:
                         windList.append({"polledTime":polledTime,"activePower":i[0],"windSpeed":i[1]})
+                    else:
+                        windList.append({"polledTime":polledTime,"activePower":0,"windSpeed":i[1]})
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
@@ -288,7 +479,6 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
 @app.post('/PeakDemand/Analysis/Count/Peak/Filtered')
 def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
     peaklis = []
-
     try:
         value = data.get('date')
         peak = data.get('peak')
@@ -338,7 +528,9 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
 
 @app.get('/PeakDemand/Analysis/Count')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
-
+    if 'peakCount' in bms_cache:
+        print("from cache")
+        return bms_cache['peakCount']
     peaklis=[]
     try:
         processed_db = get_bmsdb()
@@ -380,6 +572,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
     peaklis.append({'limit':GdmaxAvg,'maxCount':maxCount,'minCount':minCount,'maxpr':maxPr,'minpr':minPr,'thresholdlimit':maxAvg,
                     'GradualLimit':GdmaxAvg})
 
+    bms_cache['peakCount'] = peaklis
     return peaklis
 
 
@@ -437,7 +630,9 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
 
 @app.get('/PeakDemand/Maximum')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
-
+    if 'peakMax' in bms_cache:
+        print("from cache")
+        return bms_cache['peakMax']
     MaximumDemand=[]
     try:
         processed_db = get_bmsdb()
@@ -458,12 +653,12 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
             totalApparentPower2=round(i[0],2)
         MaximumDemand.append({'totalApparentPower2':totalApparentPower2,"PolledTime":polledTime})
     
+    bms_cache['peakMax'] = MaximumDemand
     return MaximumDemand
 
 @app.post('/PeakDemand/Maximum/Filtered')
 def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb)):
     MaximumDemand = []
-
     try:
         value = data.get('date')
 
@@ -490,8 +685,12 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
 
     return MaximumDemand
 
-@app.get('/thermal/dashbaordSummary')
+@app.get('/thermal/dashboardSummary')
 def peak_demand_min():
+    if 'thermalDashSumm' in bms_cache:
+        print("from cache")
+        return bms_cache['thermalDashSumm']
+    
     thermal_list = []
     try:
         processed_db = get_bmsdb()
@@ -538,11 +737,16 @@ def peak_demand_min():
     thermal_list.append({'tsInletTemperature':tsIn,'tsOutletTemperature':tsOut,'tsStoredWaterTemperature':tsSt,
                          'coolingEnergy':coolingEnergy,'chargingEnergy':chargingEnergy,'Status':status})
     
+    bms_cache['thermalDashSumm'] = thermal_list
     return thermal_list
     
 
 @app.get('/thermal/summaryCard')
 def peak_demand_min():
+    if 'thermalSumm' in bms_cache:
+        print("from cache")
+        return bms_cache['thermalSumm']
+
     thermal_list = []
     try:
         processed_db = get_bmsdb()
@@ -551,7 +755,7 @@ def peak_demand_min():
 
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT tsStoredWaterTemperature,thermalStorageInlet,thermalStorageOutlet,linePressHigh,dischargingFlowrate,ADPValve,BDPValve,HValve,actuatorPosition,actualChargingFlowrate,polledTime  FROM bmsmgmtprodv13.thermalStorageMQTTReadings where date(polledTime) = curdate() and ADPValve>0 order by recordId desc limit 1;")
+    bms_cur.execute("SELECT tsStoredWaterTemperature,thermalStorageInlet,thermalStorageOutlet,linePressHigh,dischargingFlowrate,ADPValve,BDPValve,HValve,actuatorPosition,actualChargingFlowrate,polledTime  FROM bmsmgmtprodv13.thermalStorageMQTTReadings where date(polledTime) = curdate() order by recordId desc limit 1;")
 
     thermalres= bms_cur.fetchall()
 
@@ -596,7 +800,7 @@ def peak_demand_min():
     except:
         actuator = None
 
-    bms_cur.execute("SELECT chargingPump1Power,chargingPump2Power FROM  bmsmgmt_olap_prod_v13.hvacChillerElectricPolling where date(polledTime) = curdate() order by polledTime desc limit 1;")
+    bms_cur.execute("SELECT chargingPump1Power,chargingPump2Power,dischargingPump1Power,dischargingPump2Power FROM  bmsmgmt_olap_prod_v13.hvacChillerElectricPolling where date(polledTime) = curdate() order by polledTime desc limit 1;")
 
     statusres = bms_cur.fetchall()
 
@@ -608,21 +812,45 @@ def peak_demand_min():
         chargingpump2 = statusres[0][1]
     except:
         chargingpump2 = None
+    try:
+        dischargingpump1 = statusres[0][2]
+    except:
+        dischargingpump1 = None
+    try:
+        dischargingpump2 = statusres[0][3]
+    except:
+        dischargingpump2 = None
+
+
+    def calculate_percentage(x):
+        return ((15 - x) / (15 - 7)) * 100
+    
+    if tsstored != None:
+        EnergyPercentage = calculate_percentage(tsstored)
+    else:
+        EnergyPercentage = None
 
 
     thermal_list.append({"storedwatertemperature":tsstored,"inletTemparature":tsInlet,"outletTemparature":tsOultlet,
                          "thermalStoragelinepressure":linePress,"flowrateToBuilding":flowrate,"flowrateToTS":flowrateTS,
                          "ADPvalveStatus":Adpvalve,"BDPvalveStatus":Bdpvalve,"HvalveStatus":Hvalve,"ActuvatorStatus":actuator,
-                         "chargingPump1Power":chargingpump1,"chargingPump2Power":chargingpump2,"polledTime":thermalres[0][10]})
+                         'EnergyPercentage':EnergyPercentage,"chargingPump1Power":chargingpump1,"chargingPump2Power":chargingpump2,
+                         'dischargingpump1':dischargingpump1,'dischargingpump2':dischargingpump2,"polledTime":thermalres[0][10]})
     
     bms_cur.close()
     processed_db.close()
-    
+
+    bms_cache['thermalSumm'] = thermal_list
+
     return thermal_list
     
 
 @app.get('/peakDemandmin')
 def peak_demand_min():
+    if 'peakDemandmin' in bms_cache:
+        print("from cache")
+        return bms_cache['peakDemandmin']
+
     peak_list = []
     try:
         processed_db = get_bmsdb()
@@ -658,6 +886,8 @@ def peak_demand_min():
 
     bms_cur.close()
     processed_db.close()
+
+    bms_cache['peakDemandmin'] = peak_list
 
     return peak_list
 
@@ -713,6 +943,10 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_bmsdb
 
 @app.get('/grid/initialgraph')
 def peak_demand_min():
+    if 'gridinit' in bms_cache:
+        print("from cache")
+        return bms_cache['gridinit']
+    
     grid_list = []
     try:
         processed_db = get_emsdb()
@@ -732,6 +966,8 @@ def peak_demand_min():
 
     bms_cur.close()
     processed_db.close()
+
+    bms_cache['gridinit'] = grid_list
 
     return grid_list
 
@@ -780,6 +1016,10 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
 @app.get('/peak/initialgraph')
 def peak_demand_min():
+    if 'peakinit' in bms_cache:
+        print("from cache")
+        return bms_cache['peakinit']
+    
     peak_list = []
     try:
         processed_db = get_emsdb()
@@ -799,6 +1039,8 @@ def peak_demand_min():
 
     bms_cur.close()
     processed_db.close()
+
+    bms_cache['peakinit'] = peak_list
 
     return peak_list
 
@@ -873,6 +1115,10 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
 @app.get('/BuildingConsumptionPage2')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    if 'building2' in bms_cache:
+        print("from cache")
+        return bms_cache['building2']
+
     building_list = []
     try:
         processed_db = get_emsdb()
@@ -898,6 +1144,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     bms_cur.close()
     processed_db.close()
     
+    bms_cache['building2'] = building_list
+
     return building_list
 
 
@@ -934,6 +1182,10 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
 @app.get('/buildingConsumptionHighlights')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    if 'buildinghighlight' in bms_cache:
+        print("from cache")
+        return bms_cache['buildinghighlight']
+    
     building_list = []
     try:
         processed_db = get_emsdb()
@@ -976,6 +1228,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     bms_cur.close()
     processed_db.close()
 
+    bms_cache['buildinghighlight'] = building_list
+
     return building_list
 
 @app.post('/filtered/buildingConsumptionHighlights')
@@ -1016,6 +1270,10 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
 @app.get('/Ltoanalytics/energy_VS_packsoc')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    if 'ltoEnervspac' in bms_cache:
+        print("from cache")
+        return bms_cache['ltoEnervspac']
+    
     lto_list = []
     try:
         processed_db = get_emsdb()
@@ -1034,6 +1292,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     bms_cur.close()
     processed_db.close()
+
+    bms_cache['ltoEnervspac'] = lto_list
 
     return lto_list    
     
@@ -1064,6 +1324,10 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
 @app.get('/current_VS_voltage/LTOBattery')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
+    if 'ltoCurvsVol' in bms_cache:
+        print("from cache")
+        return bms_cache['ltoCurvsVol']
+    
     lto_list = []
     try:
         processed_db = get_bmsdb()
@@ -1085,6 +1349,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_bmsdb)):
 
     bms_cur.close()
     processed_db.close()
+
+    bms_cache['ltoCurvsVol'] = lto_list
 
     return lto_list
 

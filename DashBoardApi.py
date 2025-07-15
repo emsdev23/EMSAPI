@@ -2,7 +2,6 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import mysql.connector
 from fastapi.responses import JSONResponse
-import json
 
 app = FastAPI()
 
@@ -10,6 +9,11 @@ origins = [
     "*",
     # Add more origins as needed
 ]
+
+file_path = "/home/tenet/ems/Creds/db_creds.json"
+
+with open(file_path, 'r') as file:
+    data = json.load(file)
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,29 +23,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-file_path = "/home/tenet/ems/py_script/db_creds.json"
-
-with open(file_path, 'r') as file:
-    data = json.load(file)
-
 def get_emsdb():
     db = mysql.connector.connect(
-        host=data['awsDB']['host'],
-        user=data['awsDB']['user'],
-        password=data['awsDB']['password'],
+        host=data['emsDB']['host'],
+        user=data['emsDB']['user'],
+        password=data['emsDB']['password'],
         database='EMS',
-        port=data['awsDB']['port']
+        port=data['emsDB']['port']
     )
     return db
 
 def get_meterdb():
     db = mysql.connector.connect(
-        host=data['awsDB']['host'],
-        user=data['awsDB']['user'],
-        password=data['awsDB']['password'],
+        host=data['emsDB']['host'],
+        user=data['emsDB']['user'],
+        password=data['emsDB']['password'],
         database='meterdata',
-        port=data['awsDB']['port']
+        port=data['emsDB']['port']
     )
+    return db
+
     return db
 
 def get_RAWemsdb():
@@ -54,6 +55,86 @@ def get_RAWemsdb():
     )
     return db
 
+@app.get('/EnergyProfile/RenewableEnergy')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+
+    RenewableEnergyData = []
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+
+    ems_cur = processed_db.cursor()
+
+    ems_cur.execute(f"""SELECT Total_RE,Total_fossil,RE_Percentage FROM EMS.TotalRE_Monthwise 
+                        where month(polledmonth) = month(curdate()) and year(polledmonth) = year(curdate());""")
+
+    res = ems_cur.fetchall()
+
+    for i in res:
+        if i[0] != None:
+            Total_RE = i[0]
+        else:
+            Total_RE = 0
+        if i[1] != None:
+            Total_fossil = i[1]
+        else:
+            Total_fossil = 0
+        if i[2] != None:
+            REPercentage = i[2]
+        else:
+            REPercentage = 0
+
+        RenewableEnergyData.append({
+            'Total_RE': Total_RE,
+            'Total_fossil': Total_fossil,
+            'RE_Percentage': REPercentage
+        })
+
+    return RenewableEnergyData
+
+
+@app.post('/EnergyProfile/RenewableEnergy/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
+    RenewableEnergyData = []
+
+    try:
+        value = data.get('date')
+        print(value)
+        year = value[0:4]
+        month = value[5:]
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"""SELECT Total_RE,Total_fossil,RE_Percentage FROM EMS.TotalRE_Monthwise
+                               where month(polledmonth) = '{month}' and year(polledmonth) = '{year}'""")
+                
+                res = bmscur.fetchall()
+
+                for i in res:
+                    if i[0] != None:
+                        Total_RE = i[0]
+                    else:
+                        Total_RE = 0
+                    if i[1] != None:
+                        Total_fossil = i[1]
+                    else:
+                        Total_fossil = 0
+                    if i[2] != None:
+                        REPercentage = i[2]
+                    else:
+                        REPercentage = 0
+
+                    RenewableEnergyData.append({
+                        'Total_RE': Total_RE,
+                        'Total_fossil': Total_fossil,
+                        'RE_Percentage': REPercentage
+                    })
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return RenewableEnergyData
+
+
 @app.get('/EnergyProfile/Consumption')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     Consumption = []
@@ -64,7 +145,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     ems_cur = processed_db.cursor()
 
-    ems_cur.execute("SELECT sum(gridEnergy),sum(rooftopEnergy),sum(diesel) FROM EMS.buildingConsumption where date(polledTime) = curdate();")
+    ems_cur.execute("SELECT sum(grid33KvA),sum(rooftopEnergy),sum(diesel) FROM EMS.buildingConsumption where date(polledTime) = curdate();")
 
     res = ems_cur.fetchall()
 
@@ -96,7 +177,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         value = data.get('date')
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT sum(gridEnergy),sum(rooftopEnergy),sum(diesel) FROM EMS.buildingConsumption where date(polledTime) = '{value}';")
+                bmscur.execute(f"SELECT sum(grid33KvA),sum(rooftopEnergy),sum(diesel) FROM EMS.buildingConsumption where date(polledTime) = '{value}';")
 
                 res = bmscur.fetchall()
 
@@ -122,125 +203,6 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
 
     return Consumption
 
-@app.get('/EnergyProfile/RenewableEnergy')
-def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
-
-    RenewableEnergyData = []
-    try:
-        processed_db = get_emsdb()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
-
-    ems_cur = processed_db.cursor()
-
-    ems_cur.execute(f"""SELECT sum(gridEnergy),sum(windEnergy),sum(wheeledinEnergy),sum(wheeledinEnergy2),sum(rooftopEnergy),sum(diesel) 
-                        FROM EMS.buildingConsumption where 
-                        month(polledTime) = month(curdate()) and year(polledTime) = year(curdate());""")
-
-    res = ems_cur.fetchall()
-
-    for i in res:
-        if i[1] != None:
-            wd = i[1]
-        else:
-            wd = 0
-        if i[2] != None:
-            wh = i[2]
-        else:
-            wh = 0
-        if i[3] != None:
-            wh2 = i[3]
-        else:
-            wh2 = 0
-        if i[4] != None:
-            rf = i[4]
-        else:
-            rf = 0
-        if i[5] != None:
-            dg = i[5]
-        else:
-            dg = 0
-    
-        grid = i[0]-(wd+wh+wh2)
-
-        if grid < 0:
-            grid = 0
-
-        Total_RE = round(wd+wh+wh2+rf)
-        Total_fossil = round(grid+dg)
-
-        REPercentage = round((Total_RE/(Total_RE+Total_fossil))*100)
-        FossilPercentage = round((Total_fossil/(Total_RE+Total_fossil))*100)
-
-        RenewableEnergyData.append({
-            'Total_RE': Total_RE,
-            'Total_fossil': Total_fossil,
-            'RE_Percentage': REPercentage,
-            'Fossil_Percentage': FossilPercentage
-        })
-
-    return RenewableEnergyData
-
-
-@app.post('/EnergyProfile/RenewableEnergy/Filtered')
-def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
-    RenewableEnergyData = []
-
-    try:
-        value = data.get('date')
-        year = value[0:4]
-        month = value[5:]
-        if value and isinstance(value, str):
-            with db.cursor() as bmscur:
-                bmscur.execute(f"""SELECT sum(gridEnergy),sum(windEnergy),sum(wheeledinEnergy),sum(wheeledinEnergy2),sum(rooftopEnergy),sum(diesel) 
-                        FROM EMS.buildingConsumption where 
-                        month(polledTime) = '{month}' and year(polledTime) = '{year}'""")
-                
-                res = bmscur.fetchall()
-
-                for i in res:
-                    if i[1] != None:
-                        wd = i[1]
-                    else:
-                        wd = 0
-                    if i[2] != None:
-                        wh = i[2]
-                    else:
-                        wh = 0
-                    if i[3] != None:
-                        wh2 = i[3]
-                    else:
-                        wh2 = 0
-                    if i[4] != None:
-                        rf = i[4]
-                    else:
-                        rf = 0
-                    if i[5] != None:
-                        dg = i[5]
-                    else:
-                        dg = 0
-                
-                    grid = i[0]-(wd+wh+wh2)
-
-                    if grid < 0:
-                        grid = 0
-
-                    Total_RE = round(wd+wh+wh2+rf)
-                    Total_fossil = round(grid+dg)
-
-                    REPercentage = round((Total_RE/(Total_RE+Total_fossil))*100)
-                    FossilPercentage = round((Total_fossil/(Total_RE+Total_fossil))*100)
-
-                    RenewableEnergyData.append({
-                        'Total_RE': Total_RE,
-                        'Total_fossil': Total_fossil,
-                        'RE_Percentage': REPercentage,
-                        'Fossil_Percentage': FossilPercentage
-                    })
-    except mysql.connector.Error as e:
-        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
-
-    return RenewableEnergyData
 
 @app.get('/Dashboard/TopTenClients')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
@@ -289,6 +251,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
     return TopTenClients_Response
+
 
 
 @app.get('/Dashboard/batterytimes')
@@ -360,6 +323,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     return operationLi
 
 
+
 @app.get('/Dashboard/IoeTotal')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     ioe_list = []
@@ -370,33 +334,32 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     
     emscur = processed_db.cursor()
 
-    emscur.execute("""SELECT sum(st1chargingEnergy),sum(st2chargingEnergy),sum(st3chargingEnergy),sum(st4chargingEnergy),sum(st5chargingEnergy)
-        FROM EMS.IOEbatteryHourly where date(polledTime) = curdate();""")
+    emscur.execute("""SELECT IFNULL(SUM(st1chargingEnergy), 0) + IFNULL(SUM(st2chargingEnergy), 0) + IFNULL(SUM(st3chargingEnergy), 0) +
+                    IFNULL(SUM(st4chargingEnergy), 0) + IFNULL(SUM(st5chargingEnergy), 0) FROM EMS.IOEbatteryHourly
+                    WHERE DATE(polledTime) = CURDATE();""")
     
     res = emscur.fetchall()
 
-    chg = 0
-
-    for i in res:
-        if i[0] != None:
-            chg += i[0]
+    if len(res) > 0:
+        chg = res[0][0]
+    else:
+        chg = 0
     
-    emscur.execute("""SELECT sum(st1dischargingEnergy),sum(st2dischargingEnergy),sum(st3dischargingEnergy),sum(st4dischargingEnergy),sum(st5dischargingEnergy)
-        FROM EMS.IOEbatteryHourly where date(polledTime) = curdate();""")
+    emscur.execute("""SELECT IFNULL(SUM(st1dischargingEnergy), 0) + IFNULL(SUM(st2dischargingEnergy), 0) + IFNULL(SUM(st3dischargingEnergy), 0) +
+        IFNULL(SUM(st4dischargingEnergy), 0) + IFNULL(SUM(st5dischargingEnergy), 0) FROM 
+        EMS.IOEbatteryHourly WHERE DATE(polledTime) = CURDATE();""")
 
     res1 = emscur.fetchall()
 
-    dchg = 0
-
-    for i in res1:
-        if i[0] != None:
-            dchg += abs(i[0])
+    if len(res1) > 0: 
+        dchg = res1[0][0]
+    else:
+        dchg = 0
 
     
     ioe_list.append({'chargeEnergy':round(chg,2),'dischargeEnergy':-abs(round(dchg,2))})
 
     return ioe_list
-
 
 @app.get('/Dashboard/ltoTotal')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
@@ -452,6 +415,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
 
     return ups_list
 
+
 @app.get('/Dashboard/IoeHourly')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     ioe_list = []
@@ -482,7 +446,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
                                  "dchg1":0,"dchg2":0,"dchg3":0,"dchg4":0,"dchg5":0,"idle":0.1,
                                  "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
                                  "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]
-                                 ,"totalChg":0,"totalDchg":0,"totalIdle":0.1,'totalPack':pack})
+ 				 ,"totalChg":0,"totalDchg":0,"totalIdle":0.1,'totalPack':pack})
                 
             else:
                 polledTime = str(i[0])[11:16]
@@ -499,7 +463,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
                                  "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
                                  "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
                                  "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]
-                                 ,"totalChg":totalChg,"totalDchg":totalDchg,"totalIdle":0.1,'totalPack':pack})
+ 				 ,"totalChg":totalChg,"totalDchg":totalDchg,"totalIdle":0.1,'totalPack':pack})
 
     return ioe_list
 
@@ -522,7 +486,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 res = emscur.fetchall()
 
                 if len(res) > 0:
-                            for i in res:
+                      for i in res:
                                 if i[1] == None and i[2] == None and i[3] == None and i[4] == None and i[5] == None and i[6] == None and i[7] == None and i[8] == None and i[9] == None and i[10] == None:
                                     polledTime = str(i[0])[11:16]
                                     pli = [i[11],i[12],i[13],i[14],i[15]]
@@ -532,7 +496,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                                                     "dchg1":0,"dchg2":0,"dchg3":0,"dchg4":0,"dchg5":0,"idle":0.1,
                                                     "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
                                                     "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20],
-                                                    "totalChg":0,"totalDchg":0,"totalIdle":0.1,'totalPack':pack})
+						     "totalChg":0,"totalDchg":0,"totalIdle":0.1,'totalPack':pack})
                                     
                                 else:
                                     polledTime = str(i[0])[11:16]
@@ -549,13 +513,13 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                                                     "dchg1":i[6],"dchg2":i[7],"dchg3":i[8],"dchg4":i[9],"dchg5":i[10],"idle":0,
                                                     "pack1":i[11],"pack2":i[12],"pack3":i[13],"pack4":i[14],"pack5":i[15],
                                                     "availEn1":i[16],"availEn2":i[17],"availEn3":i[18],"availEn4":i[19],"availEn5":i[20]
-                                                    ,"totalChg":totalChg,"totalDchg":totalDchg,"totalIdle":0.1,'totalPack':pack})
+						    ,"totalChg":totalChg,"totalDchg":totalDchg,"totalIdle":0.1,'totalPack':pack})
+
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
     
     return ioe_list
-
 
 @app.get('/Dashboard/REtillDay')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
@@ -581,6 +545,95 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     emscur.close()
 
     return clients
+
+
+
+
+@app.get('/EnergyProfile/SourcesofRenewables')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+
+    SourcesofRenewablesData=[]
+    try:
+        processed_db = get_emsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    ems_cur = processed_db.cursor()
+
+    ems_cur.execute("SELECT rooftop_percentage,wheeledph1_percentage,wheeledph2_percentage,wind_percentage FROM EMS.monthlyEnergyConsumption WHERE MONTH(polledmonth) = MONTH(CURDATE()) AND YEAR(polledmonth) = YEAR(CURDATE());")
+   
+    res = ems_cur.fetchall()
+
+    # print(res)
+
+    for i in res:
+        
+        if(i[0]==None):
+            rooftop_percentage=0
+        else:
+            rooftop_percentage=round(i[0],2)
+        if(i[1]==None):
+            wheeledph1_percentage=0
+        else:
+            wheeledph1_percentage=round(i[1],2)
+        if(i[2]==None):
+            wheeledph2_percentage=0
+        else:
+            wheeledph2_percentage=round(i[2],2)
+        if(i[3]==None):
+            wind_percentage=0
+        else:
+            wind_percentage=round(i[3],2)
+
+        SourcesofRenewablesData.append({'rooftop_percentage':rooftop_percentage,"wheeledph1_percentage":wheeledph1_percentage,"wheeledph2_percentage":wheeledph2_percentage,"wind_percentage":wind_percentage})
+    
+    return SourcesofRenewablesData
+
+
+
+
+@app.post('/EnergyProfile/SourcesofRenewables/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb)):
+
+    SourcesofRenewablesData=[]
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT rooftop_percentage,wheeledph1_percentage,wheeledph2_percentage,wind_percentage FROM EMS.monthlyEnergyConsumption WHERE date(polledmonth) = '{value}-01'")
+
+                res = bmscur.fetchall()
+
+        
+        for i in res:
+            if(i[0]==None):
+                rooftop_percentage=0
+            else:
+                rooftop_percentage=round(i[0],2)
+            if(i[1]==None):
+                wheeledph1_percentage=0
+            else:
+                wheeledph1_percentage=round(i[1],2)
+            if(i[2]==None):
+                wheeledph2_percentage=0
+            else:
+                wheeledph2_percentage=round(i[2],2)
+            if(i[3]==None):
+                wind_percentage=0
+            else:
+                wind_percentage=round(i[3],2)
+
+            SourcesofRenewablesData.append({'rooftop_percentage':rooftop_percentage,"wheeledph1_percentage":wheeledph1_percentage,"wheeledph2_percentage":wheeledph2_percentage,"wind_percentage":wind_percentage})
+                
+        
+        return SourcesofRenewablesData
+    except mysql.connector.Error as e:
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+            
+
 
 @app.get('/Dashboard/topClients')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
@@ -727,7 +780,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     else:
         chiller = 0
 
-    data = {'chiller':chiller,'commonarea':commonarea,'others':others,'client':client}
+    data = {'Chiller':chiller,'Common Area':commonarea,'Others':others,'Client':client}
 
     sorted_data = dict(sorted(data.items(), key=lambda item: item[1], reverse=True))
 
@@ -836,7 +889,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 else:
                     chiller = 0
 
-                data = {'chiller':chiller,'commonarea':commonarea,'others':others,'client':client}
+                data = {'Chiller':chiller,'Common Area':commonarea,'Others':others,'Client':client}
 
                 sorted_data = dict(sorted(data.items(), key=lambda item: item[1], reverse=True))
 
@@ -848,6 +901,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
     return energy
+
 
 
 @app.get('/Dashboard/REprofile')
@@ -1083,7 +1137,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT round(sum(gridEnergy)),round(sum(wheeledinEnergy)),round(sum(rooftopEnergy)),round(sum(wheeledinEnergy2)),round(sum(windEnergy)) FROM EMS.buildingConsumption where date(polledTime) = curdate();")
+    bms_cur.execute("SELECT round(sum(grid33KvA)),round(sum(wheeledinEnergy)),round(sum(rooftopEnergy)),round(sum(wheeledinEnergy2)),round(sum(windEnergy)) FROM EMS.buildingConsumption where date(polledTime) = curdate();")
     
     res = bms_cur.fetchall()
 
@@ -1108,7 +1162,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     else:
         wind = 0
 
-    total_grid = grid-wind-wheeled2
+    total_grid = grid-wind-wheeled-wheeled2
 
     if total_grid < 0 :
         total_grid = 0
@@ -1152,7 +1206,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         if value and isinstance(value, str):
             with db.cursor() as bms_cur:
 
-                bms_cur.execute(f"SELECT round(sum(bmsgrid)),round(sum(wheeledinEnergy)),round(sum(rooftopEnergy)),round(sum(wheeledinEnergy2)),round(sum(windEnergy)) FROM EMS.buildingConsumption where date(polledTime) = '{value}';")
+                bms_cur.execute(f"SELECT round(sum(grid33KvA)),round(sum(wheeledinEnergy)),round(sum(rooftopEnergy)),round(sum(wheeledinEnergy2)),round(sum(windEnergy)) FROM EMS.buildingConsumption where date(polledTime) = '{value}';")
                 
                 res = bms_cur.fetchall()
 
@@ -1195,6 +1249,8 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 else:
                     diesel = 0
 
+                diesel = float(diesel)
+
                 bms_cur.execute(f"SELECT avg(avgpowerfactor),min(minpowerfactor) FROM EMS.schneider7230processed where date(polledTime) = '{value}';")
                 
                 powerres = bms_cur.fetchall()
@@ -1202,7 +1258,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
                 avgfac = powerres[0][0]
                 minfac = powerres[0][1]
 
-                RE = ((wheeled+wheeled2+rooftop+wind)/(total_grid+wheeled2+wheeled+diesel+wind))*100
+                RE = round(((wheeled+wheeled2+rooftop+wind)/(total_grid+wheeled2+wheeled+diesel+wind))*100,3)
 
                 Highlights.append({'wheeled':wheeled,'wheeled2':wheeled2,'rooftop':rooftop,'grid':total_grid,'wind':wind,
                                 'diesel':diesel,'avgFactor':avgfac,'minFactor':minfac,'RE':RE})
@@ -1212,7 +1268,6 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
     return Highlights
-
 
 @app.get('/Dashboard/WheeledInSolar2')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
@@ -1313,7 +1368,6 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
     return RoofTop_response
 
 #c02 reduction api
-
 @app.get('/Dashboard/co2')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     Co2_response = []
@@ -1421,7 +1475,6 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
 
     return co2
-
 
 # Dashboard Grid  api
 @app.get('/Dashboard/Grid')
@@ -1663,6 +1716,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_emsdb
     return lto_list
 
 
+#Evcharger api
 @app.get("/dashboard/EvCharger")
 def ev_charger_dashboard(db: mysql.connector.connect = Depends(get_emsdb)):
     EVCharger_list = []
@@ -1671,7 +1725,7 @@ def ev_charger_dashboard(db: mysql.connector.connect = Depends(get_emsdb)):
         processed_db = get_emsdb()
         charger_cur = processed_db.cursor()
 
-        charger_cur.execute("SELECT chargpointname,energyconsumption,totalsessions FROM EMS.evcharger WHERE DATE(servertime) = CURDATE();")
+        charger_cur.execute("SELECT chargpointname,energyconsumption,totalsessions FROM evcharger WHERE DATE(servertime) = CURDATE();")
         result = charger_cur.fetchall()
 
         # Close the database connection
@@ -1786,7 +1840,7 @@ def ev_charger_dashboard(db: mysql.connector.connect = Depends(get_emsdb)):
     except Exception as e:
         # Handle exceptions and return an HTTP 500 response
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
-    
+
 
 @app.post("/dashboard/EvCharger/filtered")
 def ev_charger_dashboard(data:dict,db: mysql.connector.connect = Depends(get_emsdb)):
@@ -1796,11 +1850,9 @@ def ev_charger_dashboard(data:dict,db: mysql.connector.connect = Depends(get_ems
 
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                processed_db = get_emsdb()
-                charger_cur = processed_db.cursor()
 
-                charger_cur.execute(f"SELECT chargpointname,energyconsumption,totalsessions FROM EMS.evcharger WHERE DATE(servertime) = '{value}'")
-                result = charger_cur.fetchall()
+                bmscur.execute(f"SELECT chargpointname,energyconsumption,totalsessions FROM EMS.evcharger WHERE DATE(servertime) = '{value}'")
+                result = bmscur.fetchall()
 
                 # Initialize variables
                 NoOfChargers = 0
@@ -1905,8 +1957,6 @@ def ev_charger_dashboard(data:dict,db: mysql.connector.connect = Depends(get_ems
                     # Repeat the same for other chargers...
                 })
                 bmscur.close()
-                processed_db.close()
-                charger_cur.close()
 
     except mysql.connector.Error as e:
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)

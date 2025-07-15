@@ -20,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-file_path = "/home/tenet/ems/py_script/db_creds.json"
+file_path = "/home/tenet/ems/creds/db_creds.json"
 
 with open(file_path, 'r') as file:
     data = json.load(file)
@@ -74,6 +74,134 @@ def process_energy_data(data):
 
     return result
 
+
+@app.get('/Control/ExcesssREgraph')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    Consumption = []
+    try:
+        ems_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+    
+    emscur = ems_db.cursor()
+
+    emscur.execute("select polledTime,wheeled,wheeled2,grid,wind,diesel,roofTop,ioe,thermal,peakDemand from EMS.tenMinData where polledTime >= curdate();")
+
+    res = emscur.fetchall()
+
+    OutLi = []
+
+    for i in res:
+        polledTime = str(i[0])[11:16]
+        if i[1] != None:
+            wheeled = i[1]
+        else:
+            wheeled = 0
+        if i[2] != None:
+            wheeled2 = i[2]
+        else:
+            wheeled2 = 0
+        if i[3] != None:
+            grid = i[3]
+        else:
+            grid = 0
+        if i[4] != None:
+            wind = i[4]
+        else:
+            wind = 0
+        if i[5] != None:
+            diesel = i[5]
+        else:
+            diesel = 0
+        if i[6] != None:
+            roofTop = i[6]
+        else:
+            roofTop = 0
+        if i[7] != None:
+            ioe = i[7]
+        else:
+            ioe = 0
+        if i[8] != None:
+            thermal = i[8]
+        else:
+            thermal = 0
+        if i[9] != None:
+            peak = i[9]
+        else:
+            peak = 0
+
+        Consumption = grid+diesel+roofTop
+        RE = wheeled+wheeled2+roofTop+wind
+
+        Energy = Consumption - RE
+
+        OutLi.append({'polledTime':polledTime,'consumption':Energy,
+                      "battery":ioe,"Theraml":thermal,"peak":peak})
+    return OutLi
+
+
+@app.post('/Control/ExcesssREgraph/filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    OutLi = []
+    try:
+        value = data.get('date')
+        if value and isinstance(value, str):
+            with db.cursor() as awscur:
+                awscur.execute(f"select polledTime,wheeled,wheeled2,grid,wind,diesel,roofTop,ioe,thermal,peakDemand from EMS.tenMinData where date(polledTime) = '{value}';")
+
+                res = awscur.fetchall()
+                
+                for i in res:
+                    polledTime = str(i[0])[11:16]
+                    if i[1] != None:
+                        wheeled = i[1]
+                    else:
+                        wheeled = 0
+                    if i[2] != None:
+                        wheeled2 = i[2]
+                    else:
+                        wheeled2 = 0
+                    if i[3] != None:
+                        grid = i[3]
+                    else:
+                        grid = 0
+                    if i[4] != None:
+                        wind = i[4]
+                    else:
+                        wind = 0
+                    if i[5] != None:
+                        diesel = i[5]
+                    else:
+                        diesel = 0
+                    if i[6] != None:
+                        roofTop = i[6]
+                    else:
+                        roofTop = 0
+                    if i[7] != None:
+                        ioe = i[7]
+                    else:
+                        ioe = 0
+                    if i[8] != None:
+                        thermal = i[8]
+                    else:
+                        thermal = 0
+                    if i[9] != None:
+                        peak = i[9]
+                    else:
+                        peak = 0
+
+                    Consumption = grid+diesel+roofTop
+                    RE = wheeled+wheeled2+roofTop+wind
+
+                    Energy = Consumption - RE
+
+                    OutLi.append({'polledTime':polledTime,'consumption':Energy,
+                                "battery":ioe,"Theraml":thermal,"peak":peak})
+
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": ["MySQL connection error",e]}, status_code=500)
+    
+    return OutLi   
 
 @app.get('/Consumption/HourlyData')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
@@ -277,8 +405,8 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
                         c1WhlRem,c2WhlRem,c4WhlRem,c5WhlRem,
                         c1Wind,c2Wind,c4Wind,c5Wind,
                         c1WindRem,c2WindRem,c4WindRem,c5WindRem
-                    FROM EMS.slotWiseCalculation where month(polledDate) = month(curdate() 
-                    and year(polledDate) = year(curdate()));""")
+                        FROM EMS.slotWiseCalculation where month(polledDate) = month(curdate()) 
+                        and year(polledDate) = year(curdate());""")
     
     res = emscur.fetchall()
 
@@ -345,7 +473,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
                             c1WhlRem,c2WhlRem,c4WhlRem,c5WhlRem,
                             c1Wind,c2Wind,c4Wind,c5Wind,
                             c1WindRem,c2WindRem,c4WindRem,c5WindRem
-                        FROM EMS.slotWiseCalculation where month(polledDate) = {mnth} and year(polledDate) = {year} ;""")
+                        FROM EMS.slotWiseCalculation where month(polledDate) = {mnth} and year(polledDate) = '{year}' ;""")
                             
                 res = awscur.fetchall()
 
@@ -535,7 +663,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     
     awscur = aws_db.cursor()
 
-    awscur.execute("SELECT polledDate,Energy FROM EMS.windMonthWise where month(polledDate) = month(curdate());;")
+    awscur.execute("SELECT polledDate,Energy FROM EMS.windMonthWise where month(polledDate) = month(curdate()) and year(polledDate) = year(curdate());")
 
     res = awscur.fetchall()
 
@@ -791,7 +919,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
 def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
     batteryOperationData=[]
     try:
-        processed_db = get_emsdb()
+        processed_db = get_awsdb()
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
    
@@ -863,25 +991,38 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
     batteryUsageData=[]
     try:
         processed_db = get_awsdb()
+        emsdb = get_emsdb()
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
    
-    ems_cur = processed_db.cursor()
-    ems_cur.execute("SELECT LTO_Average_discharge_power,IoE_Average_discharge_power,IOE_Duration,LTO_Duration FROM EMS.BatterysUsage where date(polledtime)=curdate() order by  polledtime desc limit 1;")
-    res = ems_cur.fetchall()
+    aws_cur = processed_db.cursor()
 
-    for i in res:      
-        if(i[0]==None):
-            LTO_Average_discharge_power=0
-        else:
+    aws_cur.execute("SELECT LTO_Average_discharge_power,LTO_Duration FROM EMS.BatterysUsage where date(polledtime)=curdate() order by  polledtime desc limit 1;")
+    res1 = aws_cur.fetchall()
+
+    ems_cur = emsdb.cursor()
+    ems_cur.execute("""SELECT sum(TIMESTAMPDIFF(Minute, dischargeON, dischargeOFF)) as Minutes, sum(Energy) as Energy 
+            FROM EMS.ioePeakDchg where date(dischargeON) = curdate();""")
+        
+    res2 = ems_cur.fetchall()
+
+    ltoTime = 0
+    LTO_Average_discharge_power = 0
+    ioeTime = 0
+    IoE_Average_discharge_power = 0
+
+    for i in res1:      
+        if i[0]!=None:
             LTO_Average_discharge_power=round(i[0],2)
-        if(i[1]==None):
-            IoE_Average_discharge_power=0
-        else:
-            IoE_Average_discharge_power=round(i[1],2)
+            ltoTime = i[1]    
+    
+    for i in res2:
+        if i[1] != None:
+            IoE_Average_discharge_power = abs(i[1])
+            ioeTime = i[0]
 
-        batteryUsageData.append({'LTO_Average_discharge_power':LTO_Average_discharge_power,"IoE_Average_discharge_power":IoE_Average_discharge_power,
-                                 'IOEDuration':i[2],'LTODuration':i[3]})
+    batteryUsageData.append({'LTO_Average_discharge_power':LTO_Average_discharge_power,"IoE_Average_discharge_power":IoE_Average_discharge_power,
+                                 'IOEDuration':ioeTime,'LTODuration':ltoTime})
     
     return batteryUsageData
 
@@ -893,20 +1034,33 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
 
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT LTO_Average_discharge_power,IoE_Average_discharge_power,IOE_Duration,LTO_Duration FROM EMS.BatterysUsage where date(polledtime) = '{value}' order by  polledtime desc limit 1")
-                res = bmscur.fetchall()
-        for i in res:
-            if(i[0]==None):
-                LTO_Average_discharge_power=0
-            else:
-                LTO_Average_discharge_power=round(i[0],2)
-            if(i[1]==None):
-                IoE_Average_discharge_power=0
-            else:
-                IoE_Average_discharge_power=round(i[1],2)
+                bmscur.execute(f"SELECT LTO_Average_discharge_power,LTO_Duration FROM EMS.BatterysUsage where date(polledtime)= '{value}' order by  polledtime desc limit 1;")
+                res1 = bmscur.fetchall()
 
-            batteryUsageData.append({'LTO_Average_discharge_power':LTO_Average_discharge_power,"IoE_Average_discharge_power":IoE_Average_discharge_power,
-                                     'IOEDuration':i[2],'LTODuration':i[3]}) 
+                emsdb = get_emsdb()
+                ems_cur = emsdb.cursor()
+                ems_cur.execute(f"""SELECT sum(TIMESTAMPDIFF(Minute, dischargeON, dischargeOFF)) as Minutes, sum(Energy) as Energy 
+                        FROM EMS.ioePeakDchg where date(dischargeON) = '{value}';""")
+                    
+                res2 = ems_cur.fetchall()
+
+                ltoTime = 0
+                LTO_Average_discharge_power = 0
+                ioeTime = 0
+                IoE_Average_discharge_power = 0
+
+                for i in res1:      
+                    if i[0] !=None :
+                        LTO_Average_discharge_power=round(i[0],2)
+                        ltoTime = i[1]    
+                
+                for i in res2:
+                    if i[1] != None:
+                        IoE_Average_discharge_power = abs(i[1])
+                        ioeTime = i[0]
+
+                batteryUsageData.append({'LTO_Average_discharge_power':LTO_Average_discharge_power,"IoE_Average_discharge_power":IoE_Average_discharge_power,
+                                            'IOEDuration':ioeTime,'LTODuration':ltoTime})
         return batteryUsageData
     except mysql.connector.Error as e:
         print(e)
@@ -2366,7 +2520,7 @@ def enddateFunct(dated):
     return stdate
 
 
-@app.get('/peakMontly')
+@app.get('/peakMonthly')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
     peak_lis = []
     try:
@@ -2420,7 +2574,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
     return peak_lis
 
 
-@app.get('/gridMontly')
+@app.get('/gridMonthly')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
     grid_lis = []
     try:

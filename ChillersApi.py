@@ -19,7 +19,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-file_path = "/home/tenet/ems/py_script/db_creds.json"
+
+file_path = "/home/tenet/ems/Creds/db_creds.json"
 
 with open(file_path, 'r') as file:
     data = json.load(file)
@@ -69,7 +70,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
     res = ems_cur.fetchall()
 
     for i in res:
-        polledTime = str(i)[11:16]
+        polledTime = str(i[0])[11:16]
         EnergyData.append({'TimeStamp':polledTime,'coolingEnergy':i[1],'ChargingEnergy':i[2]})
 
     return EnergyData
@@ -93,7 +94,6 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
     except mysql.connector.Error as e:
         print(e)
         return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
-
 
 @app.get('/chillerDashboard/electricalEnergy/phasewise')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
@@ -371,6 +371,195 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb
 
 
 
+@app.get('/chillerDashboard/TotalElectricalEnergy')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+
+    TotalElectrical_Energy=[]
+    try:
+        processed_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    bms_cur = processed_db.cursor()
+
+    bms_cur.execute("SELECT sum(Total_ElectricalEnergy) as totalEnergy FROM EMS.ElectricalEnergy where date(polledTime)=curdate();")
+   
+    res = bms_cur.fetchall()
+
+    # print(res)
+
+    for i in res:
+        if(i[0]==None):
+            TotalElectricalEnergy=0
+        else:
+            TotalElectricalEnergy=round(i[0],2)
+        TotalElectrical_Energy.append({'TotalElectricalEnergy':TotalElectricalEnergy})
+    
+    return TotalElectrical_Energy
+
+
+@app.post('/chillerDashboard/TotalElectricalEnergy/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+
+    TotalElectrical_Energy=[]
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT sum(Total_ElectricalEnergy) as totalEnergy FROM EMS.ElectricalEnergy where date(polledTime) = '{value}'")
+
+                res = bmscur.fetchall()
+
+                for i in res:
+                    if(i[0]==None):
+                        TotalElectricalEnergy=0
+                    else:
+                        TotalElectricalEnergy=round(i[0],2)
+                    TotalElectrical_Energy.append({'TotalElectricalEnergy':TotalElectricalEnergy})
+                
+        
+            return TotalElectrical_Energy
+    except mysql.connector.Error as e:
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+
+@app.get('/chillerDashboard/Hotwaterenergy')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
+    HotwaterenergyResponse=[]
+    try:
+        processed_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    bms_cur = processed_db.cursor()
+
+    bms_cur.execute("SELECT polledTime,Freshwater_Energy,Recirculation_Energy,Delivered_Energy FROM EMS.Hotwaterenergy where date(polledTime)=curdate();")
+   
+    res = bms_cur.fetchall()
+
+    # print(res)
+
+    for i in res:
+        polledTime = str(i[0])[11:16]
+        if(i[1]==None):
+            Freshwater_Energy=0
+        else:
+            Freshwater_Energy=round(i[1],2)
+
+        if(i[2]==None):
+            Recirculation_Energy=0
+        else:
+            Recirculation_Energy=round(i[2],2)
+
+        if(i[3]==None):
+            Delivered_Energy=0
+        else:
+            Delivered_Energy=round((i[3]*-1),2)
+
+        HotwaterenergyResponse.append({
+              'polledTime':polledTime,
+              'Freshwater_Energy':Freshwater_Energy,
+              'Recirculation_Energy':Recirculation_Energy,
+              'Delivered_Energy':Delivered_Energy,
+            })
+    return HotwaterenergyResponse
+
+
+
+@app.post('/chillerDashboard/Hotwaterenergy/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+
+    HotwaterenergyResponse=[]
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT polledTime,Freshwater_Energy,Recirculation_Energy,Delivered_Energy FROM EMS.Hotwaterenergy where date(polledTime)= '{value}'")
+
+                res = bmscur.fetchall()
+
+                for i in res:
+                    polledTime = str(i[0])[11:16]
+                    if(i[1]==None):
+                        Freshwater_Energy=0
+                    else:
+                        Freshwater_Energy=round(i[1],2)
+                    if(i[2]==None):
+                        Recirculation_Energy=0
+                    else:
+                        Recirculation_Energy=round(i[2],2)
+                    if(i[3]==None):
+                        Delivered_Energy=0
+                    else:
+                        Delivered_Energy=round((i[3]*-1),2)
+
+
+                    HotwaterenergyResponse.append({
+                        'polledTime':polledTime,
+                        'Freshwater_Energy':Freshwater_Energy,
+                        'Recirculation_Energy':Recirculation_Energy,
+                        'Delivered_Energy':Delivered_Energy,
+                    })
+            
+            return HotwaterenergyResponse
+        
+    except mysql.connector.Error as e:
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+
+
+
+
+@app.get('/chillerDashboard/HotWater/storedWaterTemp')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_emsdb)):
+    HotWaterstoredWaterTemp = []
+    try:
+        processed_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    bms_cur = processed_db.cursor()
+
+    bms_cur.execute("SELECT polledTime,storedwatertemperature FROM EMS.Hotwater_Temp_Flowrate where date(polledTime)=curdate()")
+   
+    res = bms_cur.fetchall()
+
+    # print(res)
+
+    for i in res:
+        polledTime = str(i[0])[11:16]
+        HotWaterstoredWaterTemp.append({'storedwatertemperature':round(i[1],2),'polledTime':polledTime})
+
+    return HotWaterstoredWaterTemp
+
+
+@app.post('/chillerDashboard/HotWater/storedWaterTemp/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+    HotWaterstoredWaterTemp = []
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT polledTime,storedwatertemperature FROM EMS.Hotwater_Temp_Flowrate where date(polledTime)='{value}'")
+
+                res = bmscur.fetchall()
+
+                for i in res:
+                    polledTime = str(i[0])[11:16]
+                    HotWaterstoredWaterTemp.append({'storedwatertemperature':round(i[1],2),'polledTime':polledTime})
+        
+    except mysql.connector.Error as e:
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+    return HotWaterstoredWaterTemp
+
 
 @app.get('/chillerDashboard/CTloadvscop')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
@@ -383,7 +572,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     bms_cur = processed_db.cursor()
 
     bms_cur.execute("""select c1load,c2load,c3load,c4load,c5load,c6load,c7load,c8load,
-c1cop,c2cop,c3cop,c4cop,c5cop,c6cop,c6cop,c8cop,
+c1cop,c2cop,c3cop,c4cop,c5cop,c6cop,c7cop,c8cop,
 polledTime from EMS.cloadVScop where date(polledTime) = curdate();""")
 
     res = bms_cur.fetchall()
@@ -399,7 +588,7 @@ polledTime from EMS.cloadVScop where date(polledTime) = curdate();""")
 
 
 @app.post('/chillerDashboard/CTloadvscop/Filtered')
-def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meterdb)):
+def chiller_cop(data: dict, db: mysql.connector.connect = Depends(get_meterdb)):
     ctcop_list = []
 
     try:
@@ -407,9 +596,9 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
 
         if value and isinstance(value, str):
             with db.cursor() as bms_cur:
-                bms_cur.execute("""select c1load,c2load,c3load,c4load,c5load,c6load,c7load,c8load,
-                c1cop,c2cop,c3cop,c4cop,c5cop,c6cop,c6cop,c8cop,
-                polledTime from EMS.cloadVScop where date(polledTime) = curdate();""")
+                bms_cur.execute(f"""select c1load,c2load,c3load,c4load,c5load,c6load,c7load,c8load,
+                c1cop,c2cop,c3cop,c4cop,c5cop,c6cop,c7cop,c8cop,
+                polledTime from EMS.cloadVScop where date(polledTime) = '{value}';""")
 
                 res = bms_cur.fetchall()
 
@@ -425,6 +614,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
     return ctcop_list
 
 
+
 @app.get('/chillerDashboard/CTperformance')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     ct_list = []
@@ -435,11 +625,11 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT CT5,CT6,CT7,CT8,CT9 FROM meterdata.ctperform2 where date(polledTime) = curdate() order by polledTime limit 1;")
+    bms_cur.execute("SELECT CT5,CT6,CT7,CT8,CT9 FROM meterdata.ctperform2 where date(polledTime) = curdate() order by polledTime desc limit 1;")
    
     res2 = bms_cur.fetchall()
 
-    bms_cur.execute("SELECT CT1,CT2,CT3,CT4 FROM meterdata.ctperform1 where date(polledTime) = curdate() order by polledTime limit 1;")
+    bms_cur.execute("SELECT CT1,CT2,CT3,CT4 FROM meterdata.ctperform1 where date(polledTime) = curdate() order by polledTime desc  limit 1;")
    
     res1 = bms_cur.fetchall()
 
@@ -484,6 +674,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
             CT4 = j[3]
         ct_list.append({"CT1":CT1,"CT2":CT2,"CT3":CT3,"CT4":CT4,"CT5":CT5,"CT6":CT6,"CT7":CT7,"CT8":CT8,"CT9":CT9})
     elif len(res1) > 0 and len(res2) == 0:
+        j = res1[0]
         if j[0] == None:
             CT1 = 0
         else:
@@ -530,6 +721,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
 
     return ct_list
 
+
 @app.get('/chillerDashboard/thermal/storedWaterTemp')
 def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     storedWaterTemp = []
@@ -540,7 +732,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
    
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT timecolumn,storedwatertemperature FROM meterdata.thermalstoredwaterquaterly where date(timecolumn)=curdate()")
+    bms_cur.execute("SELECT polledTime,Temperature FROM EMS.Tsstoredwatertemp where date(polledTime)=curdate()")
    
     res = bms_cur.fetchall()
 
@@ -562,7 +754,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
 
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT timecolumn,storedwatertemperature FROM meterdata.thermalstoredwaterquaterly where date(timecolumn) = '{value}'")
+                bmscur.execute(f"SELECT polledTime,Temperature FROM EMS.Tsstoredwatertemp where date(polledTime) = '{value}'")
 
                 res = bmscur.fetchall()
 
@@ -839,7 +1031,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
             'Phase2avg_condenserLineFlowrate':Phase2avg_condenserLineFlowrate,
             'Phase2polledTime':Phase2polledTime,
             'EvapLowerlimit':5,
-            'EvapUpperlimit':18,
+            'EvapUpperlimit':20,
             'CondLowerlimit':20,
             'CondUpperlimit':40
          })
@@ -903,7 +1095,7 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
             'Phase1avg_condenserLineFlowrate':Phase1avg_condenserLineFlowrate,
             'Phase1polledTime':Phase1polledTime,
             'EvapLowerlimit':5,
-            'EvapUpperlimit':18,
+            'EvapUpperlimit':20,
             'CondLowerlimit':20,
             'CondUpperlimit':40
          })
@@ -960,11 +1152,11 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
                         'Phase2EvaporatorFlowrate':Phase2EvaporatorFlowrate,
                         'Phase2avg_condenserLineFlowrate':Phase2avg_condenserLineFlowrate,
                         'Phase2polledTime':Phase2polledTime,
-                        'EvapLowerlimit':5,
-                        'EvapUpperlimit':18,
+                     	'EvapLowerlimit':5,
+                        'EvapUpperlimit':20,
                         'CondLowerlimit':20,
                         'CondUpperlimit':40
-                     })
+			})
        
             return thermalinletoutlet_PH2
        
@@ -1022,11 +1214,11 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
                         'Phase1EvaporatorFlowrate':Phase1EvaporatorFlowrate,
                         'Phase1avg_condenserLineFlowrate':Phase1avg_condenserLineFlowrate,
                         'Phase1polledTime':Phase1polledTime,
-                        'EvapLowerlimit':5,
-                        'EvapUpperlimit':18,
+                       	'EvapLowerlimit':5,
+                        'EvapUpperlimit':20,
                         'CondLowerlimit':20,
                         'CondUpperlimit':40
-                     })
+			 })
        
             return thermalinletoutlet_PH1
        
@@ -1103,13 +1295,15 @@ def peak_demand_date(db: mysql.connector.connect = Depends(get_meterdb)):
     try:
         processed_db = get_meterdb()
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error{str(e)}"})
    
     bms_cur = processed_db.cursor()
 
-    bms_cur.execute("SELECT  c5cop,c6cop,c7cop,c8cop,timestamp FROM meterdata.chillarcopphaseone5678 where date(timestamp)=curdate();;")
+    bms_cur.execute("SELECT  c5cop,c6cop,c7cop,c8cop,timestamp FROM meterdata.chillarcopphaseone5678 where date(timestamp)=curdate();")
    
     res = bms_cur.fetchall()
+
+    # print(res)
 
     for i in res:
         Phase1polledTime = str(i[4])[11:16]
@@ -1200,7 +1394,7 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
 
         if value and isinstance(value, str):
             with db.cursor() as bmscur:
-                bmscur.execute(f"SELECT  c5cop,c6cop,c7cop,c8cop,timestamp FROM meterdata.chillarcopphase15678 where date(timestamp) = '{value}'")
+                bmscur.execute(f"SELECT  c5cop,c6cop,c7cop,c8cop,timestamp FROM meterdata.chillarcopphaseone5678 where date(timestamp) = '{value}'")
 
                 res = bmscur.fetchall()
 
@@ -1355,9 +1549,88 @@ def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_meter
 
 
 
+@app.get('/chillerDashboard/TemparatureCard')
+def peak_demand_date(db: mysql.connector.connect = Depends(get_awsdb)):
+
+    TemparatureCardResponse=[]
+    try:
+        processed_db = get_awsdb()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": f"MySQL connection error: {str(e)}"})
+   
+    bms_cur = processed_db.cursor()
+
+    bms_cur.execute("SELECT MaximumTemp,MinimumTemp,AverageTemp FROM EMS.Temperaturecard where date(polledTime)=curdate() order by polledTime desc limit 1;")
+   
+    res = bms_cur.fetchall()
+
+    # print(res)
+
+    for i in res:
+        if(i[0]==None):
+           MaximumTemp=0
+        else:
+            MaximumTemp=round(i[0],2)
+        if(i[1]==None):
+            MinimumTemp=0
+        else:
+            MinimumTemp=round(i[1],2)
+        if(i[2]==None):
+            AverageTemp=0
+        else:
+            AverageTemp=round(i[2],2)
+
+
+        TemparatureCardResponse.append({'MaximumTemp':MaximumTemp,"MinimumTemp":MinimumTemp,"AverageTemp":AverageTemp})
+    
+    return TemparatureCardResponse
+
+
+
+
+@app.post('/chillerDashboard/TemparatureCard/Filtered')
+def peak_demand_date(data: dict, db: mysql.connector.connect = Depends(get_awsdb)):
+
+    TemparatureCardResponse=[]
+
+    try:
+        value = data.get('date')
+
+        if value and isinstance(value, str):
+            with db.cursor() as bmscur:
+                bmscur.execute(f"SELECT MaximumTemp,MinimumTemp,AverageTemp FROM EMS.Temperaturecard where date(polledTime)='{value}' order by polledTime desc limit 1; ")
+
+                res = bmscur.fetchall()
+
+                for i in res:
+                    if(i[0]==None):
+                        MaximumTemp=0
+                    else:
+                        MaximumTemp=round(i[0],2)
+                    if(i[1]==None):
+                        MinimumTemp=0
+                    else:
+                        MinimumTemp=round(i[1],2)
+                    if(i[2]==None):
+                        AverageTemp=0
+                    else:
+                        AverageTemp=round(i[2],2)
+                    TemparatureCardResponse.append({'MaximumTemp':MaximumTemp,"MinimumTemp":MinimumTemp,"AverageTemp":AverageTemp})
+                
+                
+        
+            return TemparatureCardResponse
+        
+    except mysql.connector.Error as e:
+        print(e)
+        return JSONResponse(content={"error": "MySQL connection error"}, status_code=500)
+
+
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=5004)
+
 
 
